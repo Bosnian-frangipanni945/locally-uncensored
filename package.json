@@ -9,7 +9,17 @@
     "type": "git",
     "url": "https://github.com/purpledoubled/locally-uncensored.git"
   },
-  "keywords": ["ai", "local", "ollama", "comfyui", "uncensored", "private", "chat", "image-generation", "video-generation"],
+  "keywords": [
+    "ai",
+    "local",
+    "ollama",
+    "comfyui",
+    "uncensored",
+    "private",
+    "chat",
+    "image-generation",
+    "video-generation"
+  ],
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -23,6 +33,7 @@
     "@tailwindcss/vite": "^4.2.2",
     "@types/react-syntax-highlighter": "^15.5.13",
     "@types/uuid": "^10.0.0",
+    "dotenv": "^17.3.1",
     "framer-motion": "^12.38.0",
     "lucide-react": "^1.0.1",
     "react": "^19.2.4",

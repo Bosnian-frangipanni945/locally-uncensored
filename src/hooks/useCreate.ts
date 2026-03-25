@@ -22,6 +22,7 @@ export function useCreate() {
   const [videoModels, setVideoModels] = useState<string[]>([])
   const [samplerList, setSamplerList] = useState<string[]>([])
   const [videoBackend, setVideoBackend] = useState<VideoBackend>('none')
+  const [error, setError] = useState<string | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const checkConnection = useCallback(async () => {
@@ -54,7 +55,23 @@ export function useCreate() {
       setIsGenerating, setProgress, setCurrentPromptId, addToGallery,
     } = useCreateStore.getState()
 
-    if (!prompt.trim() || !model) return
+    setError(null)
+
+    if (!prompt.trim()) {
+      setError('Please enter a prompt.')
+      return
+    }
+    if (!model) {
+      setError('No model selected. Make sure ComfyUI has models installed.')
+      return
+    }
+
+    // Check ComfyUI is actually running
+    const isRunning = await checkComfyConnection()
+    if (!isRunning) {
+      setError('ComfyUI is not running. Wait for it to start or check the connection.')
+      return
+    }
 
     setIsGenerating(true)
     setProgress(0)
@@ -64,19 +81,26 @@ export function useCreate() {
         ? buildTxt2VidWorkflow({ prompt, negativePrompt, model, sampler, steps, cfgScale, width, height, seed, frames, fps }, videoBackend)
         : buildTxt2ImgWorkflow({ prompt, negativePrompt, model, sampler, steps, cfgScale, width, height, seed })
 
-      const promptId = await submitWorkflow(workflow)
+      let promptId: string
+      try {
+        promptId = await submitWorkflow(workflow)
+      } catch (err) {
+        setError(`Failed to submit to ComfyUI: ${err instanceof Error ? err.message : String(err)}`)
+        setIsGenerating(false)
+        return
+      }
       setCurrentPromptId(promptId)
 
       // Poll for completion
       await new Promise<void>((resolve, reject) => {
         let attempts = 0
-        const maxAttempts = 1200 // 20 minutes for video (can be slow)
+        const maxAttempts = 1200
 
         pollRef.current = setInterval(async () => {
           attempts++
           if (attempts > maxAttempts) {
             clearInterval(pollRef.current!)
-            reject(new Error('Generation timed out'))
+            reject(new Error('Generation timed out after 20 minutes'))
             return
           }
 
@@ -91,8 +115,8 @@ export function useCreate() {
               clearInterval(pollRef.current!)
               setProgress(100)
 
-              // Extract outputs — check images, gifs, and videos
               const outputs = history.outputs || {}
+              let found = false
               for (const nodeId of Object.keys(outputs)) {
                 const nodeOutput = outputs[nodeId]
                 const files: ComfyUIOutput[] = [
@@ -101,6 +125,7 @@ export function useCreate() {
                   ...(nodeOutput.videos || []),
                 ]
                 for (const file of files) {
+                  found = true
                   const galleryItem: GalleryItem = {
                     id: uuid(),
                     type: mode,
@@ -119,10 +144,14 @@ export function useCreate() {
                   addToGallery(galleryItem)
                 }
               }
+              if (!found) {
+                setError('Generation completed but no output was produced. Check ComfyUI logs.')
+              }
               resolve()
             } else if (history.status?.status_str === 'error') {
               clearInterval(pollRef.current!)
-              reject(new Error('Generation failed'))
+              const errMsg = history.status?.messages?.[0]?.[1]?.message || 'Unknown error in ComfyUI'
+              reject(new Error(errMsg))
             }
           } catch {
             // Keep polling on network errors
@@ -130,6 +159,8 @@ export function useCreate() {
         }, 1000)
       })
     } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      setError(`Generation failed: ${msg}`)
       console.error('Generation error:', err)
     } finally {
       setIsGenerating(false)
@@ -146,6 +177,7 @@ export function useCreate() {
     store.setIsGenerating(false)
     store.setProgress(0)
     store.setCurrentPromptId(null)
+    setError(null)
   }, [store])
 
   return {
@@ -154,6 +186,7 @@ export function useCreate() {
     videoModels,
     samplerList,
     videoBackend,
+    error,
     checkConnection,
     fetchModels,
     generate,
