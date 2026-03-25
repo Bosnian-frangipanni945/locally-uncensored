@@ -10,8 +10,13 @@ No cloud. No censorship. No data collection. Just you and your AI.
 [![GitHub stars](https://img.shields.io/github/stars/PurpleDoubleD/locally-uncensored?style=social)](https://github.com/PurpleDoubleD/locally-uncensored/stargazers)
 [![GitHub last commit](https://img.shields.io/github/last-commit/PurpleDoubleD/locally-uncensored)](https://github.com/PurpleDoubleD/locally-uncensored/commits)
 
-<!-- Add screenshot/GIF here -->
-<!-- ![Locally Uncensored Screenshot](docs/screenshot.png) -->
+### 📸 Screenshots
+
+| Chat with Personas | Image & Video Creation | Model Manager |
+|:---:|:---:|:---:|
+| ![Chat](docs/screenshots/marketing_03_chat_personas.png) | ![Create](docs/screenshots/marketing_06_create_view.png) | ![Models](docs/screenshots/marketing_07_model_manager.png) |
+| **Light Mode** | **Settings** | **Landing** |
+| ![Light Mode](docs/screenshots/marketing_09_light_mode.png) | ![Settings](docs/screenshots/marketing_08_settings.png) | ![Hero](docs/screenshots/marketing_01_hero.png) |
 
 [Getting Started](#-quick-start) · [Features](#-features) · [Why This App?](#-why-locally-uncensored) · [Contributing](#contributing)
 
