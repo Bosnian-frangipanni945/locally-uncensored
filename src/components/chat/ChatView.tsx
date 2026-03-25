@@ -13,7 +13,15 @@ export function ChatView() {
   const activeModel = useModelStore((s) => s.activeModel)
   const models = useModelStore((s) => s.models)
 
-  if (!activeConversationId) {
+  // Check if current conversation has user messages
+  const conversation = useChatStore((s) => {
+    if (!s.activeConversationId) return undefined
+    return s.conversations.find((c) => c.id === s.activeConversationId)
+  })
+  const hasUserMessages = conversation?.messages.some((m) => m.role === 'user') ?? false
+
+  // Show welcome + personas when: no conversation OR conversation has no user messages yet
+  if (!activeConversationId || !hasUserMessages) {
     const hasModels = models.length > 0
 
     return (

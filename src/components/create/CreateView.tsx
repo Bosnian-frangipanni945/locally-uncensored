@@ -160,16 +160,17 @@ export function CreateView() {
               </button>
             </div>
 
-            {mode === 'video' && videoBackend === 'none' && connected === true && (
+            {mode === 'video' && (videoBackend === 'none' || videoModels.length === 0) && connected === true && (
               <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-yellow-50 dark:bg-yellow-500/10 border border-yellow-200 dark:border-yellow-500/20 text-yellow-700 dark:text-yellow-400 text-xs">
                 <AlertTriangle size={14} />
-                <span>No video nodes detected. Install Wan 2.1 models or AnimateDiff in ComfyUI for video generation.</span>
+                <span>No video models installed. Add Wan 2.1/2.2 or Hunyuan models to ComfyUI's models/diffusion_models/ folder.</span>
               </div>
             )}
 
-            {mode === 'video' && videoBackend !== 'none' && connected === true && (
+            {mode === 'video' && videoBackend !== 'none' && videoModels.length > 0 && connected === true && (
               <div className="text-xs text-gray-400">
-                Video backend: <span className="text-gray-300 font-medium">{videoBackend === 'wan' ? 'Wan 2.1/2.2' : 'AnimateDiff'}</span>
+                Video backend: <span className="text-gray-600 dark:text-gray-300 font-medium">{videoBackend === 'wan' ? 'Wan 2.1/2.2' : 'AnimateDiff'}</span>
+                {' · '}{videoModels.length} model{videoModels.length !== 1 ? 's' : ''}
               </div>
             )}
 
