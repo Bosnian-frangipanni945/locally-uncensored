@@ -9,6 +9,17 @@ No cloud. No censorship. No data collection. Just you and your AI.
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![GitHub stars](https://img.shields.io/github/stars/PurpleDoubleD/locally-uncensored?style=social)](https://github.com/PurpleDoubleD/locally-uncensored/stargazers)
 [![GitHub last commit](https://img.shields.io/github/last-commit/PurpleDoubleD/locally-uncensored)](https://github.com/PurpleDoubleD/locally-uncensored/commits)
+[![GitHub Discussions](https://img.shields.io/github/discussions/PurpleDoubleD/locally-uncensored)](https://github.com/PurpleDoubleD/locally-uncensored/discussions)
+
+<img src="docs/demo.gif" alt="Locally Uncensored Demo" width="700">
+
+*Chat with AI personas, generate images, create videos — all running locally on your machine.*
+
+[Getting Started](#-quick-start) · [Features](#-features) · [Why This App?](#-why-locally-uncensored) · [Roadmap](#-roadmap) · [Contributing](CONTRIBUTING.md)
+
+</div>
+
+---
 
 ### 📸 Screenshots
 
@@ -17,10 +28,6 @@ No cloud. No censorship. No data collection. Just you and your AI.
 | ![Chat](docs/screenshots/marketing_03_chat_personas.png) | ![Create](docs/screenshots/marketing_06_create_view.png) | ![Models](docs/screenshots/marketing_07_model_manager.png) |
 | **Light Mode** | **Settings** | **Landing** |
 | ![Light Mode](docs/screenshots/marketing_09_light_mode.png) | ![Settings](docs/screenshots/marketing_08_settings.png) | ![Hero](docs/screenshots/marketing_01_hero.png) |
-
-[Getting Started](#-quick-start) · [Features](#-features) · [Why This App?](#-why-locally-uncensored) · [Contributing](#contributing)
-
-</div>
 
 ---
 
@@ -71,7 +78,7 @@ Tired of switching between Ollama for chat, ComfyUI for images, and another tool
 
 ## 🚀 Quick Start
 
-### One-Command Setup (Windows)
+### Windows
 
 ```bash
 git clone https://github.com/PurpleDoubleD/locally-uncensored.git
@@ -79,12 +86,20 @@ cd locally-uncensored
 setup.bat
 ```
 
-That's it. The setup script automatically:
-1. Installs Node.js, Git, and Ollama (if missing)
-2. Installs all dependencies
+### Linux / macOS
+
+```bash
+git clone https://github.com/PurpleDoubleD/locally-uncensored.git
+cd locally-uncensored
+chmod +x setup.sh
+./setup.sh
+```
+
+The setup script automatically:
+1. Checks for Node.js 18+, Git, and Ollama
+2. Installs missing dependencies
 3. Downloads a recommended uncensored AI model (~5.7 GB)
-4. Creates a desktop shortcut
-5. Starts the app in your browser
+4. Starts the app in your browser
 
 ### Manual Installation
 
@@ -104,7 +119,7 @@ Open **http://localhost:5173** — the app recommends models on first launch.
 1. Install [ComfyUI](https://github.com/comfyanonymous/ComfyUI)
 2. Create a `.env` file in the project root:
    ```
-   COMFYUI_PATH=C:\path\to\your\ComfyUI
+   COMFYUI_PATH=/path/to/your/ComfyUI
    ```
 3. Click **Start ComfyUI** in the Create tab, or start it manually
 4. Download image models (e.g., SDXL checkpoints) into ComfyUI's `models/checkpoints` folder
@@ -167,7 +182,7 @@ Create a `.env` file (see `.env.example`):
 
 ```env
 # Path to your ComfyUI installation (optional)
-COMFYUI_PATH=C:\path\to\your\ComfyUI
+COMFYUI_PATH=/path/to/your/ComfyUI
 ```
 
 ### In-App Settings
@@ -176,6 +191,21 @@ COMFYUI_PATH=C:\path\to\your\ComfyUI
 - **Top P / Top K** — Fine-tune token sampling
 - **Max Tokens** — Limit response length (0 = unlimited)
 - **Theme** — Dark or Light mode
+
+---
+
+## 🗺️ Roadmap
+
+- [ ] **RAG / Document Chat** — Upload PDFs and chat with your documents
+- [ ] **Audio Generation** — Text-to-speech and music generation
+- [ ] **Plugin System** — Extend the app with community plugins
+- [ ] **Multi-User Mode** — Share your local AI server with your household
+- [ ] **Mobile UI** — Responsive layout for phone/tablet access
+- [ ] **Docker Support** — For those who prefer containerized deployments
+- [ ] **Custom Persona Creator** — Build and share your own personas
+- [ ] **Export/Import** — Backup and restore your chats and settings
+
+Have an idea? [Open a discussion](https://github.com/PurpleDoubleD/locally-uncensored/discussions)!
 
 ---
 
@@ -201,13 +231,9 @@ src/
 
 ## Contributing
 
-Contributions are welcome! Feel free to open issues and pull requests.
+We welcome contributions! Check out the [Contributing Guide](CONTRIBUTING.md) for details on how to get started.
 
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+See our [open issues](https://github.com/PurpleDoubleD/locally-uncensored/issues) or the [Roadmap](#-roadmap) for areas where help is needed.
 
 ## License
 
@@ -220,5 +246,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 **Built with privacy in mind. Your data stays on your machine.** 🔒
 
 If you find this useful, consider giving it a ⭐
+
+[Report Bug](https://github.com/PurpleDoubleD/locally-uncensored/issues/new?template=bug_report.yml) · [Request Feature](https://github.com/PurpleDoubleD/locally-uncensored/issues/new?template=feature_request.yml) · [Join Discussion](https://github.com/PurpleDoubleD/locally-uncensored/discussions)
 
 </div>
