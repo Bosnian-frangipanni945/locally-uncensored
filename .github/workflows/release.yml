@@ -61,7 +61,16 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'Locally Uncensored v__VERSION__'
-          releaseBody: 'See the release notes for details.'
+          releaseBody: |
+            ## Download
+
+            **Windows:** Download the `.exe` installer. During setup, choose "Install for current user only" for a portable/no-install experience. Or use the `.msi` for system-wide installation.
+
+            **macOS:** Download the `.dmg` and drag the app to any folder.
+
+            **Linux:** Download the `.AppImage`, make it executable (`chmod +x`), and run. No installation needed.
+
+            > All versions are portable-friendly — no admin rights required.
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}

@@ -15,7 +15,7 @@ No cloud. No censorship. No data collection. Just you and your AI.
 
 *Chat with AI personas, generate images, create videos — all running locally on your machine.*
 
-[Getting Started](#-quick-start) · [Features](#-features) · [Why This App?](#-why-locally-uncensored) · [Roadmap](#-roadmap) · [Contributing](CONTRIBUTING.md)
+[Getting Started](#-quick-start) · [Portable Download](#-portable--no-install) · [Features](#-features) · [Why This App?](#-why-locally-uncensored) · [Roadmap](#-roadmap) · [Contributing](CONTRIBUTING.md)
 
 </div>
 
@@ -49,6 +49,7 @@ Tired of switching between Ollama for chat, ComfyUI for images, and another tool
 | 25+ Built-in Personas | ✅ | ❌ | ❌ | ⚠️ (manual) |
 | Modern UI | ✅ | ✅ | ✅ | ❌ |
 | Open Source | ✅ | ✅ | ❌ | ✅ |
+| Portable / No-Install | ✅ | ❌ | ✅ | ❌ |
 | No Docker Required | ✅ | ❌ | ✅ | ✅ |
 | 100% Offline | ✅ | ✅ | ✅ | ✅ |
 
@@ -132,6 +133,34 @@ start.bat
 ```
 
 Launches Ollama + ComfyUI + the app in one go.
+
+---
+
+## 📦 Portable / No-Install
+
+**Don't want to install anything?** Download the portable version — just extract and run. No admin rights, no installer, no registry entries.
+
+### Windows (Portable)
+1. Go to [Releases](https://github.com/PurpleDoubleD/locally-uncensored/releases)
+2. Download the `.exe` installer
+3. When the installer opens, select **"Install for current user only (portable)"**
+4. Choose any folder (e.g., a USB drive) — done!
+
+Alternatively, download the `.msi` for a traditional system-wide install.
+
+### Linux (Portable)
+1. Download the `.AppImage` from [Releases](https://github.com/PurpleDoubleD/locally-uncensored/releases)
+2. `chmod +x Locally-Uncensored_*.AppImage`
+3. `./Locally-Uncensored_*.AppImage`
+
+No installation needed — AppImage is portable by design.
+
+### macOS (Portable)
+1. Download the `.dmg` from [Releases](https://github.com/PurpleDoubleD/locally-uncensored/releases)
+2. Drag to any folder (doesn't have to be Applications)
+3. Right-click → Open (first time only, to bypass Gatekeeper)
+
+> **Note:** You still need [Ollama](https://ollama.com/) installed for AI chat. The app will guide you through setup on first launch.
 
 ---
 
