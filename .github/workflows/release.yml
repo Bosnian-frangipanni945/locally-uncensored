@@ -3,9 +3,12 @@ name: Build & Release Desktop App
 on:
   release:
     types: [published]
-  push:
-    branches: [master]
-    paths: ['RELEASE_TRIGGER']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v1.2.1)'
+        required: true
+        default: 'v1.2.1'
 
 permissions:
   contents: write
@@ -73,8 +76,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: v1.2.1
-          releaseName: 'Locally Uncensored v1.2.1'
+          tagName: ${{ github.event.inputs.tag || github.ref_name }}
+          releaseName: 'Locally Uncensored ${{ github.event.inputs.tag || github.ref_name }}'
           releaseBody: |
             ## Download
 
