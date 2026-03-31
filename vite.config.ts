@@ -661,12 +661,18 @@ function comfyLauncher(): Plugin {
 
             const parseDDGResults = (html: string): { title: string; url: string; snippet: string }[] => {
               const results: { title: string; url: string; snippet: string }[] = []
-              const linkRegex = /<a[^>]+class="result-link"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi
-              const snippetRegex = /<td[^>]+class="result-snippet"[^>]*>([\s\S]*?)<\/td>/gi
+              // DDG lite uses class="result__a" with tracking redirect URLs
+              const linkRegex = /<a[^>]+class="result__a"[^>]*href="([^"]*)"[^>]*>([\/\s\S]*?)<\/a>/gi
+              const snippetRegex = /<a[^>]+class="result__snippet"[^>]*>([\/\s\S]*?)<\/a>/gi
               const links: { url: string; title: string }[] = []
               let m
               while ((m = linkRegex.exec(html)) !== null) {
-                const url = m[1].replace(/&amp;/g, '&')
+                let url = decodeURIComponent(m[1]).replace(/&amp;/g, '&')
+                // Extract real URL from DDG tracking redirect
+                const uddgMatch = url.match(/uddg=([^&]+)/)
+                if (uddgMatch) url = decodeURIComponent(uddgMatch[1])
+                // Skip ads (contain duckduckgo.com/y.js)
+                if (url.includes('duckduckgo.com/y.js')) continue
                 const title = m[2].replace(/<[^>]*>/g, '').trim()
                 if (url && title) links.push({ url, title })
               }
