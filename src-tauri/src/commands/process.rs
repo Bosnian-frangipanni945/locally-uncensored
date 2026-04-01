@@ -164,16 +164,49 @@ pub fn start_comfyui(state: State<'_, AppState>) -> Result<serde_json::Value, St
         *path = Some(comfy_path.clone());
     }
 
+    // Validate python binary exists
+    let python = &state.python_bin;
+    println!("[ComfyUI] Using Python: {}", python);
     println!("[ComfyUI] Starting from: {}", comfy_path);
 
-    let child = Command::new(&state.python_bin)
+    let mut child = Command::new(python)
         .args(["main.py", "--listen", "127.0.0.1", "--port", "8188"])
         .current_dir(&comfy_path)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("Failed to start ComfyUI: {}", e))?;
+        .map_err(|e| format!("Failed to start ComfyUI (python={}): {}", python, e))?;
+
+    // Read stdout/stderr in background threads to prevent deadlock
+    let logs = state.comfy_logs.lock().unwrap().clone();
+    drop(logs);
+
+    if let Some(stdout) = child.stdout.take() {
+        let logs_ref = state.comfy_logs.lock().unwrap().clone();
+        drop(logs_ref);
+        std::thread::spawn(move || {
+            use std::io::{BufRead, BufReader};
+            let reader = BufReader::new(stdout);
+            for line in reader.lines() {
+                if let Ok(line) = line {
+                    println!("[ComfyUI] {}", line);
+                }
+            }
+        });
+    }
+
+    if let Some(stderr) = child.stderr.take() {
+        std::thread::spawn(move || {
+            use std::io::{BufRead, BufReader};
+            let reader = BufReader::new(stderr);
+            for line in reader.lines() {
+                if let Ok(line) = line {
+                    println!("[ComfyUI] {}", line);
+                }
+            }
+        });
+    }
 
     // Store process
     {

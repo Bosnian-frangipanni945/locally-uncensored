@@ -1,5 +1,7 @@
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use futures_util::StreamExt;
@@ -8,7 +10,7 @@ use tauri::State;
 use crate::state::{AppState, DownloadProgress};
 
 fn models_dir(comfy_path: &Option<String>, subfolder: &str) -> Result<PathBuf, String> {
-    let base = comfy_path.as_ref().ok_or("ComfyUI path not set")?;
+    let base = comfy_path.as_ref().ok_or("ComfyUI path not set. Please set it in settings or install ComfyUI first.")?;
     let dir = PathBuf::from(base).join("models").join(subfolder);
     fs::create_dir_all(&dir).map_err(|e| format!("Create models dir: {}", e))?;
     Ok(dir)
@@ -48,23 +50,46 @@ pub async fn download_model(
         });
     }
 
+    // Clone the Arc so the spawned task can update progress
+    let downloads_arc = Arc::clone(&state.downloads);
     let id_clone = id.clone();
     let filename_clone = filename.clone();
 
     tokio::spawn(async move {
-        match do_download(&url, &dest_file).await {
-            Ok(_) => println!("[Download] Complete: {}", filename_clone),
-            Err(e) => println!("[Download] Failed: {} - {}", filename_clone, e),
+        match do_download(&url, &dest_file, &downloads_arc, &id_clone).await {
+            Ok(_) => {
+                if let Ok(mut dl) = downloads_arc.lock() {
+                    if let Some(p) = dl.get_mut(&id_clone) {
+                        p.status = "complete".to_string();
+                    }
+                }
+                println!("[Download] Complete: {}", filename_clone);
+            }
+            Err(e) => {
+                if let Ok(mut dl) = downloads_arc.lock() {
+                    if let Some(p) = dl.get_mut(&id_clone) {
+                        p.status = "error".to_string();
+                        p.error = Some(e.clone());
+                    }
+                }
+                println!("[Download] Failed: {} - {}", filename_clone, e);
+            }
         }
     });
 
     Ok(serde_json::json!({"status": "started", "id": id}))
 }
 
-async fn do_download(url: &str, dest: &PathBuf) -> Result<(), String> {
+async fn do_download(
+    url: &str,
+    dest: &PathBuf,
+    downloads: &Arc<Mutex<HashMap<String, DownloadProgress>>>,
+    id: &str,
+) -> Result<(), String> {
     let client = reqwest::Client::builder()
-        .user_agent("LocallyUncensored/1.3")
+        .user_agent("LocallyUncensored/1.5")
         .redirect(reqwest::redirect::Policy::limited(10))
+        .timeout(std::time::Duration::from_secs(7200)) // 2 hours for large models
         .build()
         .map_err(|e| e.to_string())?;
 
@@ -79,6 +104,14 @@ async fn do_download(url: &str, dest: &PathBuf) -> Result<(), String> {
 
     let total = response.content_length().unwrap_or(0);
 
+    // Update total size
+    if let Ok(mut dl) = downloads.lock() {
+        if let Some(p) = dl.get_mut(id) {
+            p.total = total;
+            p.status = "downloading".to_string();
+        }
+    }
+
     let tmp_path = dest.with_extension("download");
     let mut file = tokio::fs::File::create(&tmp_path)
         .await
@@ -87,6 +120,7 @@ async fn do_download(url: &str, dest: &PathBuf) -> Result<(), String> {
     let mut stream = response.bytes_stream();
     let mut downloaded: u64 = 0;
     let start = Instant::now();
+    let mut last_update = Instant::now();
 
     use tokio::io::AsyncWriteExt;
     while let Some(chunk) = stream.next().await {
@@ -94,14 +128,18 @@ async fn do_download(url: &str, dest: &PathBuf) -> Result<(), String> {
         file.write_all(&chunk).await.map_err(|e| format!("Write: {}", e))?;
         downloaded += chunk.len() as u64;
 
-        // Log progress every ~1MB
-        if downloaded % (1024 * 1024) < chunk.len() as u64 {
+        // Update progress every 500ms
+        if last_update.elapsed().as_millis() > 500 {
+            last_update = Instant::now();
             let elapsed = start.elapsed().as_secs_f64();
             let speed = if elapsed > 0.0 { downloaded as f64 / elapsed } else { 0.0 };
-            println!("[Download] {:.1} MB / {:.1} MB ({:.1} MB/s)",
-                downloaded as f64 / 1048576.0,
-                total as f64 / 1048576.0,
-                speed / 1048576.0);
+
+            if let Ok(mut dl) = downloads.lock() {
+                if let Some(p) = dl.get_mut(id) {
+                    p.progress = downloaded;
+                    p.speed = speed;
+                }
+            }
         }
     }
 
@@ -112,12 +150,21 @@ async fn do_download(url: &str, dest: &PathBuf) -> Result<(), String> {
         .await
         .map_err(|e| format!("Rename: {}", e))?;
 
+    // Final progress update
+    if let Ok(mut dl) = downloads.lock() {
+        if let Some(p) = dl.get_mut(id) {
+            p.progress = downloaded;
+            p.total = downloaded;
+            p.status = "complete".to_string();
+        }
+    }
+
     Ok(())
 }
 
 #[tauri::command]
 pub fn download_progress(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
     let downloads = state.downloads.lock().unwrap();
-    let map: std::collections::HashMap<String, DownloadProgress> = downloads.clone();
+    let map: HashMap<String, DownloadProgress> = downloads.clone();
     Ok(serde_json::to_value(map).unwrap_or_default())
 }

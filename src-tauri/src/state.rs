@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::process::Child;
 use std::sync::atomic::AtomicBool;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use crate::commands::whisper::WhisperServer;
 use crate::python::get_python_bin;
@@ -37,7 +37,7 @@ pub struct AppState {
     pub comfy_logs: Mutex<Vec<String>>,
     pub comfy_path: Mutex<Option<String>>,
     pub whisper: Mutex<WhisperServer>,
-    pub downloads: Mutex<HashMap<String, DownloadProgress>>,
+    pub downloads: Arc<Mutex<HashMap<String, DownloadProgress>>>,
     pub install_status: Mutex<InstallState>,
     pub searxng_install: Mutex<InstallState>,
     pub searxng_available: AtomicBool,
@@ -54,7 +54,7 @@ impl AppState {
             comfy_logs: Mutex::new(Vec::new()),
             comfy_path: Mutex::new(None),
             whisper: Mutex::new(WhisperServer::new()),
-            downloads: Mutex::new(HashMap::new()),
+            downloads: Arc::new(Mutex::new(HashMap::new())),
             install_status: Mutex::new(InstallState::default()),
             searxng_install: Mutex::new(InstallState::default()),
             searxng_available: AtomicBool::new(false),

@@ -56,6 +56,8 @@ export async function backendCall<T = any>(
     install_searxng: { path: "/local-api/install-searxng", method: "POST" },
     searxng_status: { path: "/local-api/install-searxng" },
     ollama_search: { path: "/ollama-search" },
+    fetch_external: { path: "/local-api/proxy-download" },
+    fetch_external_bytes: { path: "/local-api/proxy-download" },
   };
 
   const endpoint = endpointMap[command];
