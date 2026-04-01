@@ -43,7 +43,7 @@ export function Sidebar() {
     <AnimatePresence>
       {sidebarOpen && (
         <motion.aside
-          className="w-72 h-full border-r border-gray-200 dark:border-white/5 bg-gray-50 dark:bg-[#171717] flex flex-col z-20 overflow-hidden"
+          className="w-72 h-full border-r border-gray-200 dark:border-white/[0.06] bg-gray-50 dark:bg-[#0e0e0e] flex flex-col z-20 overflow-hidden"
           initial={{ width: 0, opacity: 0 }}
           animate={{ width: 288, opacity: 1 }}
           exit={{ width: 0, opacity: 0 }}
@@ -52,7 +52,7 @@ export function Sidebar() {
           <div className="p-3 space-y-3">
             <button
               onClick={handleNewChat}
-              className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg bg-gray-200 dark:bg-white/10 border border-gray-300 dark:border-white/15 text-gray-800 dark:text-white hover:bg-gray-300 dark:hover:bg-white/15 transition-all"
+              className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg bg-gray-200 dark:bg-white/[0.08] border border-gray-300 dark:border-white/[0.1] text-gray-800 dark:text-white hover:bg-gray-300 dark:hover:bg-white/[0.12] transition-all"
             >
               <Plus size={18} />
               <span className="text-sm font-medium">New Chat</span>
@@ -65,7 +65,7 @@ export function Sidebar() {
                 placeholder="Search conversations..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 rounded-lg bg-gray-100 dark:bg-white/5 border border-gray-300 dark:border-white/10 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-gray-400 dark:focus:border-white/30"
+                className="w-full pl-9 pr-3 py-2 rounded-lg bg-gray-100 dark:bg-white/[0.04] border border-gray-300 dark:border-white/[0.08] text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-gray-400 dark:focus:border-white/20"
               />
             </div>
           </div>
@@ -76,8 +76,8 @@ export function Sidebar() {
                 key={conv.id}
                 className={`group flex items-center gap-2 px-3 py-2.5 rounded-lg cursor-pointer transition-all ${
                   conv.id === activeConversationId
-                    ? 'bg-gray-200 dark:bg-white/10 border border-gray-300 dark:border-white/15'
-                    : 'hover:bg-gray-100 dark:hover:bg-white/5 border border-transparent'
+                    ? 'bg-gray-200 dark:bg-white/[0.08] border border-gray-300 dark:border-white/[0.1]'
+                    : 'hover:bg-gray-100 dark:hover:bg-white/[0.04] border border-transparent'
                 }`}
                 onClick={() => {
                   setActiveConversation(conv.id)

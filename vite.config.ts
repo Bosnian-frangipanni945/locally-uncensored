@@ -188,6 +188,73 @@ function comfyLauncher(): Plugin {
       process.on('SIGINT', () => { stopComfy(); process.exit() })
       process.on('SIGTERM', () => { stopComfy(); process.exit() })
 
+      // API: ComfyUI POST proxy (workaround for Vite 8 blocking POST via proxy)
+      server.middlewares.use('/comfyui', (req, res, next) => {
+        if (req.method !== 'POST') return next()
+        const targetPath = (req.url || '').replace(/^\/comfyui/, '') || '/'
+        let body = ''
+        req.on('data', (chunk: any) => { body += chunk })
+        req.on('end', () => {
+          const proxyReq = http.request({
+            hostname: '127.0.0.1',
+            port: 8188,
+            path: targetPath,
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+          }, (proxyRes) => {
+            const chunks: Buffer[] = []
+            proxyRes.on('data', (c: Buffer) => chunks.push(c))
+            proxyRes.on('end', () => {
+              const responseBody = Buffer.concat(chunks).toString()
+              res.writeHead(proxyRes.statusCode || 500, {
+                'Content-Type': proxyRes.headers['content-type'] || 'application/json',
+              })
+              res.end(responseBody)
+            })
+          })
+          proxyReq.on('error', (err) => {
+            res.writeHead(502, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: err.message }))
+          })
+          proxyReq.write(body)
+          proxyReq.end()
+        })
+      })
+
+      // API: Proxy download (follows redirects server-side, avoids CORS)
+      server.middlewares.use('/local-api/proxy-download', (req, res) => {
+        const url = new URL(req.url || '', 'http://localhost').searchParams.get('url')
+        if (!url) {
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Missing url parameter' }))
+          return
+        }
+
+        const protocol = url.startsWith('https') ? https : http
+        const fetchUrl = (targetUrl: string, redirectCount = 0) => {
+          if (redirectCount > 5) {
+            res.writeHead(502, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Too many redirects' }))
+            return
+          }
+          protocol.get(targetUrl, { headers: { 'User-Agent': 'LocallyUncensored/1.0' } }, (upstream) => {
+            if (upstream.statusCode && upstream.statusCode >= 300 && upstream.statusCode < 400 && upstream.headers.location) {
+              fetchUrl(upstream.headers.location, redirectCount + 1)
+              return
+            }
+            res.writeHead(upstream.statusCode || 200, {
+              'Content-Type': upstream.headers['content-type'] || 'application/octet-stream',
+              'Content-Length': upstream.headers['content-length'] || '',
+            })
+            upstream.pipe(res)
+          }).on('error', (err) => {
+            res.writeHead(502, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: err.message }))
+          })
+        }
+        fetchUrl(url)
+      })
+
       // API: Manual start
       server.middlewares.use('/local-api/start-comfyui', async (_req, res) => {
         const alreadyRunning = await isComfyRunning()
@@ -1194,6 +1261,8 @@ export default defineConfig({
   plugins: [react(), tailwindcss(), comfyLauncher()],
   server: {
     port: 5173,
+    cors: true,
+    allowedHosts: true,
     proxy: {
       '/api': {
         target: 'http://localhost:11434',
@@ -1209,6 +1278,11 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/comfyui/, ''),
         ws: true,
+      },
+      '/civitai-api': {
+        target: 'https://civitai.com/api',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/civitai-api/, ''),
       },
     },
   },

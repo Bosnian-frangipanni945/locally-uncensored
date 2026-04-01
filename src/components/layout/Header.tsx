@@ -13,7 +13,7 @@ export function Header() {
   }
 
   return (
-    <header className="h-14 flex items-center justify-between px-4 border-b border-gray-200 dark:border-white/5 bg-white dark:bg-[#2f2f2f] z-20">
+    <header className="h-14 flex items-center justify-between px-4 border-b border-gray-200 dark:border-white/[0.06] bg-white dark:bg-[#111111] z-20">
       {/* Left: Sidebar + Logo */}
       <div className="flex items-center gap-3">
         <button
@@ -62,10 +62,11 @@ export function Header() {
         </button>
         <button
           onClick={() => setView('agents')}
-          className={`p-2 rounded-lg transition-colors ${currentView === 'agents' ? 'bg-green-100 dark:bg-green-500/15 text-green-600 dark:text-green-300' : 'hover:bg-gray-100 dark:hover:bg-white/10 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'}`}
-          title="AI Agents"
+          className={`relative p-2 rounded-lg transition-colors ${currentView === 'agents' ? 'bg-green-100 dark:bg-green-500/15 text-green-600 dark:text-green-300' : 'hover:bg-gray-100 dark:hover:bg-white/10 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'}`}
+          title="AI Agents (Work in Progress)"
         >
           <Bot size={18} />
+          <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-amber-400" title="Work in Progress" />
         </button>
         <button
           onClick={() => setView('models')}
