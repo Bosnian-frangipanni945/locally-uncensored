@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Cpu, Sun, Moon, ArrowRight, Download, Check, ChevronRight } from 'lucide-react'
+import { Sun, Moon, ArrowRight, Download, Check, ChevronRight } from 'lucide-react'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useModels } from '../../hooks/useModels'
 import { ONBOARDING_MODELS, type OnboardingModel } from '../../lib/constants'
@@ -59,9 +59,6 @@ export function Onboarding() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
           >
-            <div className={`w-20 h-20 rounded-2xl flex items-center justify-center mx-auto ${isDark ? 'bg-white/10' : 'bg-gray-100'}`}>
-              <Cpu size={40} className={isDark ? 'text-gray-300' : 'text-gray-600'} />
-            </div>
             <h1 className="text-3xl font-bold">Locally Uncensored</h1>
             <p className={isDark ? 'text-gray-400' : 'text-gray-500'}>
               Private, local AI chat. No servers, no tracking, everything stays on your machine.

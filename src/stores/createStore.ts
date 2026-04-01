@@ -45,6 +45,7 @@ interface CreateState {
   progressText: string
   currentPromptId: string | null
   error: string | null
+  lastGenTime: string | null
   gallery: GalleryItem[]
   promptHistory: string[]
 
@@ -66,6 +67,7 @@ interface CreateState {
   setProgress: (progress: number, text?: string) => void
   setCurrentPromptId: (id: string | null) => void
   setError: (error: string | null) => void
+  setLastGenTime: (time: string | null) => void
   addToGallery: (item: GalleryItem) => void
   removeFromGallery: (id: string) => void
   clearGallery: () => void
@@ -96,6 +98,7 @@ export const useCreateStore = create<CreateState>()(
       progressText: '',
       currentPromptId: null,
       error: null,
+      lastGenTime: null,
       gallery: [],
       promptHistory: [],
 
@@ -120,6 +123,7 @@ export const useCreateStore = create<CreateState>()(
       setProgress: (progress, text) => set({ progress, progressText: text ?? '' }),
       setCurrentPromptId: (id) => set({ currentPromptId: id }),
       setError: (error) => set({ error }),
+      setLastGenTime: (time) => set({ lastGenTime: time }),
       addToGallery: (item) => set((s) => ({ gallery: [item, ...s.gallery].slice(0, 200) })),
       removeFromGallery: (id) => set((s) => ({ gallery: s.gallery.filter((g) => g.id !== id) })),
       clearGallery: () => set({ gallery: [] }),

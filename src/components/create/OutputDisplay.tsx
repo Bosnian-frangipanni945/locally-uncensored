@@ -5,7 +5,7 @@ import { getImageUrl } from '../../api/comfyui'
 import { useCreateStore, type GalleryItem } from '../../stores/createStore'
 
 export function OutputDisplay() {
-  const { isGenerating, progress, progressText, gallery } = useCreateStore()
+  const { isGenerating, progress, progressText, gallery, lastGenTime } = useCreateStore()
   const [fullscreen, setFullscreen] = useState<GalleryItem | null>(null)
   const [copiedSeed, setCopiedSeed] = useState(false)
   const latest = gallery[0]
@@ -132,6 +132,12 @@ export function OutputDisplay() {
           </button>
           <span>·</span>
           <span>{latest.width}x{latest.height}</span>
+          {lastGenTime && (
+            <>
+              <span>·</span>
+              <span>{lastGenTime}</span>
+            </>
+          )}
         </div>
       </div>
 

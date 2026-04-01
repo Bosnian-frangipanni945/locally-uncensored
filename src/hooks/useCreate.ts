@@ -241,7 +241,8 @@ export function useCreate() {
               const comfyTime = startMsg?.[1]?.timestamp && endMsg?.[1]?.timestamp
                 ? ((endMsg[1].timestamp - startMsg[1].timestamp) / 1000).toFixed(1)
                 : null
-              setProgress(100, comfyTime ? `Done in ${comfyTime}s` : 'Complete!')
+              setProgress(100, 'Complete!')
+              useCreateStore.getState().setLastGenTime(comfyTime ? `${comfyTime}s` : null)
 
               const outputs = history.outputs ?? {}
               let found = false

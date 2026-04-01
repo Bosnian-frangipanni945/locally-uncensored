@@ -63,16 +63,20 @@ Tired of switching between Ollama for chat, ComfyUI for images, and another tool
 - **Uncensored AI Chat** — Run abliterated models locally with zero restrictions
 - **Image Generation** — Text-to-image via ComfyUI with full parameter control
 - **Video Generation** — Text-to-video with Wan 2.1/2.2 and AnimateDiff support
+- **Workflow Finder** — Auto-detects your model type and builds the right ComfyUI workflow. Search CivitAI or use built-in templates.
+- **Dynamic Workflow Builder** — No hardcoded pipelines. Queries ComfyUI's available nodes and constructs the optimal workflow automatically.
+- **Model Marketplace** — Search and download models from CivitAI directly into ComfyUI. One click, right folder, auto-detected.
 - **25+ Personas** — From Helpful Assistant to Roast Master, ready out of the box
 - **Model Manager** — Browse, install, and switch models with one click
-- **Discover & Install Models** — Browse and one-click install text, image, and video models directly in the app
 - **Thinking Display** — See the AI's reasoning in collapsible blocks
-- **Dark/Light Mode** — Beautiful glassmorphism UI that actually looks good
+- **Dark/Light Mode** — Deep black dark mode with sharp contrasts, clean light mode
+- **Privacy First** — Zero external tracking. All API calls proxied locally. No Google Fonts, no CDN scripts, no analytics.
 - **100% Local** — Everything runs on your machine, nothing touches the internet
 - **Conversation History** — All chats saved locally in your browser
-- **Document Chat (RAG)** — Upload PDFs, DOCX, or TXT files and chat with your documents. Hybrid search with confidence scores.
-- **Voice Chat** — Talk to your AI with push-to-talk and hear responses with text-to-speech. Sentence-level streaming.
-- **AI Agents** — Give your AI a goal and watch it plan, search the web, read/write files, and execute Python code autonomously.
+- **VRAM Management** — Unload models from GPU memory with one click after generation
+- **Document Chat (RAG)** *(work in progress)* — Upload PDFs, DOCX, or TXT files and chat with your documents.
+- **Voice Chat** *(work in progress)* — Talk to your AI with push-to-talk and hear responses with text-to-speech.
+- **AI Agents** *(work in progress)* — Give your AI a goal and watch it plan, search the web, and execute code autonomously.
 - **Standalone Desktop App** — Full Tauri v2 Rust backend. Download the .exe, run it — no terminal, no dev server, no Node.js.
 
 ## Tech Stack

@@ -1,4 +1,4 @@
-import { Menu, Settings, Cpu, Sun, Moon, MessageSquare, Film, Layers, Bot } from 'lucide-react'
+import { Menu, Settings, Sun, Moon, MessageSquare, Film, Layers, Bot } from 'lucide-react'
 import { useUIStore } from '../../stores/uiStore'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useChatStore } from '../../stores/chatStore'
@@ -29,8 +29,7 @@ export function Header() {
           }}
           className="flex items-center gap-2 text-gray-800 dark:text-gray-200 hover:opacity-80 transition"
         >
-          <Cpu size={20} />
-          <span className="font-bold text-sm tracking-wider hidden sm:inline">LOCALLY UNCENSORED</span>
+          <span className="font-bold text-sm tracking-wider">LOCALLY UNCENSORED</span>
         </button>
       </div>
 
