@@ -1067,10 +1067,12 @@ function comfyLauncher(): Plugin {
             )
 
             // Use async spawn instead of execSync to avoid blocking the server
+            // For spawn without shell, we need the raw unquoted path
+            const rawPythonPath = pythonBin.replace(/^"|"$/g, '')
             const runWhisper = (scriptPath: string, timeoutMs: number): Promise<string> => {
               return new Promise((resolve, reject) => {
-                const proc = spawn(pythonBin, [scriptPath], {
-                  shell: true,
+                const proc = spawn(rawPythonPath, [scriptPath], {
+                  shell: false,
                   stdio: ['ignore', 'pipe', 'pipe'],
                 })
                 let stdout = ''
