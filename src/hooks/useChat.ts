@@ -86,7 +86,9 @@ export function useChat() {
 
     const messages = [
       ...(systemPrompt ? [{ role: "system", content: systemPrompt }] : []),
-      ...conv.messages.map((m) => ({ role: m.role, content: m.content })),
+      ...conv.messages
+        .filter((m) => m.content.trim() !== '')
+        .map((m) => ({ role: m.role, content: m.content })),
     ]
 
     const abort = new AbortController()

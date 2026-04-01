@@ -229,44 +229,41 @@ export async function detectVideoBackend(): Promise<VideoBackend> {
 
 export async function findMatchingVAE(modelType: ModelType): Promise<string> {
   const vaes = await getVAEModels()
-  if (vaes.length === 0) throw new Error('No VAE models found in ComfyUI. Add a VAE to models/vae/')
+  if (vaes.length === 0) throw new Error('No VAE models found. Download a VAE for your model type from the Model Manager.')
   const lower = (s: string) => s.toLowerCase()
 
-  // Try to find a matching VAE by model type keywords
   if (modelType === 'flux' || modelType === 'flux2') {
-    const match = vaes.find(v => lower(v).includes('flux'))
+    const match = vaes.find(v => lower(v).includes('flux') || lower(v).includes('ae'))
     if (match) return match
+    throw new Error(`No FLUX VAE found. Download "ae.safetensors" from the Model Manager (FLUX bundles include it).`)
   }
-  if (modelType === 'wan') {
-    const match = vaes.find(v => lower(v).includes('wan'))
+  if (modelType === 'wan' || modelType === 'hunyuan') {
+    const match = vaes.find(v => lower(v).includes('wan') || lower(v).includes('hunyuan'))
     if (match) return match
+    throw new Error(`No Wan/Hunyuan VAE found. Download "wan_2.1_vae.safetensors" from the Model Manager.`)
   }
-  if (modelType === 'hunyuan') {
-    const match = vaes.find(v => lower(v).includes('hunyuan') || lower(v).includes('wan'))
-    if (match) return match
-  }
-
-  // Fallback: first available VAE
-  console.warn(`[ComfyUI] No ${modelType}-specific VAE found, using fallback: ${vaes[0]}`)
+  // SDXL/SD1.5 checkpoints include VAE — any VAE works as fallback
   return vaes[0]
 }
 
 export async function findMatchingCLIP(modelType: ModelType): Promise<string> {
   const clips = await getCLIPModels()
-  if (clips.length === 0) throw new Error('No CLIP/text encoder models found. Add one to models/text_encoders/')
+  if (clips.length === 0) throw new Error('No text encoder models found. Download a CLIP/T5 model for your model type from the Model Manager.')
   const lower = (s: string) => s.toLowerCase()
 
-  // Try to find a matching CLIP by model type
-  if (modelType === 'wan' || modelType === 'hunyuan') {
-    const match = clips.find(c => lower(c).includes('umt5') || lower(c).includes('wan') || lower(c).includes('t5'))
-    if (match) return match
-  }
   if (modelType === 'flux' || modelType === 'flux2') {
-    const match = clips.find(c => lower(c).includes('t5') || lower(c).includes('clip'))
+    const match = clips.find(c => lower(c).includes('t5') && !lower(c).includes('umt5'))
+      || clips.find(c => lower(c).includes('clip_l'))
     if (match) return match
+    throw new Error(`No FLUX text encoder (T5) found. Download "t5xxl_fp8_e4m3fn.safetensors" from the Model Manager.`)
   }
-
-  console.warn(`[ComfyUI] No ${modelType}-specific CLIP found, using fallback: ${clips[0]}`)
+  if (modelType === 'wan' || modelType === 'hunyuan') {
+    const match = clips.find(c => lower(c).includes('umt5') || lower(c).includes('wan'))
+      || clips.find(c => lower(c).includes('t5'))
+    if (match) return match
+    throw new Error(`No Wan/Hunyuan text encoder found. Download "umt5_xxl_fp8_e4m3fn_scaled.safetensors" from the Model Manager.`)
+  }
+  // SDXL/SD1.5 checkpoints include CLIP — any works
   return clips[0]
 }
 

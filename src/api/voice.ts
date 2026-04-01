@@ -6,9 +6,24 @@ import { backendCall, isTauri } from "./backend";
  * TTS: Browser SpeechSynthesis (runs locally in the browser, no cloud)
  */
 
+let whisperChecked = false
+let whisperAvailable = false
+
 export function isSpeechRecognitionSupported(): boolean {
-  // Always true — we use local Whisper, not browser SpeechRecognition API
-  return true;
+  return whisperAvailable
+}
+
+// Call once at startup to check if Whisper is actually running
+export async function initWhisperCheck(): Promise<boolean> {
+  if (whisperChecked) return whisperAvailable
+  try {
+    const result = await checkWhisperAvailable()
+    whisperAvailable = result.available
+  } catch {
+    whisperAvailable = false
+  }
+  whisperChecked = true
+  return whisperAvailable
 }
 
 export function isSpeechSynthesisSupported(): boolean {

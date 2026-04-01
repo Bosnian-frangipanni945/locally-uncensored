@@ -295,7 +295,37 @@ export async function executeTool(
     }
 
     case "image_generate": {
-      return "Image generation delegated to Create tab";
+      const prompt = args.prompt || args.description || ''
+      if (!prompt) return "Error: No prompt provided for image generation."
+      try {
+        const { buildDynamicWorkflow } = await import('./dynamic-workflow')
+        const { submitWorkflow, getHistory, classifyModel, getImageModels } = await import('./comfyui')
+        const models = await getImageModels()
+        if (models.length === 0) return "Error: No image models available in ComfyUI."
+        const model = models[0]
+        const workflow = await buildDynamicWorkflow({
+          prompt, negativePrompt: '', model: model.name,
+          sampler: 'euler', scheduler: 'normal', steps: 20, cfgScale: 7,
+          width: 1024, height: 1024, seed: -1, batchSize: 1,
+        }, classifyModel(model.name))
+        const promptId = await submitWorkflow(workflow)
+        for (let i = 0; i < 300; i++) {
+          await new Promise(r => setTimeout(r, 1000))
+          const history = await getHistory(promptId)
+          if (history?.status?.completed) {
+            const outputs = history.outputs ?? {}
+            for (const nodeId of Object.keys(outputs)) {
+              const files = [...(outputs[nodeId].images ?? []), ...(outputs[nodeId].gifs ?? [])]
+              if (files.length > 0) return `Image generated: ${files[0].filename} (prompt: "${prompt}")`
+            }
+            return "Generation completed but no output produced."
+          }
+          if (history?.status?.status_str === 'error') return `Generation failed: ${history.status.messages?.[0]?.[1]?.message || 'Unknown error'}`
+        }
+        return "Generation timed out after 5 minutes."
+      } catch (err) {
+        return `Generation failed: ${err instanceof Error ? err.message : String(err)}`
+      }
     }
 
     default:

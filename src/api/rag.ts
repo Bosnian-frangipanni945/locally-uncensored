@@ -80,18 +80,20 @@ function cosineSimilarity(a: number[], b: number[]): number {
   return dot / (Math.sqrt(magA) * Math.sqrt(magB) || 1)
 }
 
-function bm25Score(query: string, document: string): number {
+function bm25Score(query: string, document: string, allDocs: string[]): number {
   const queryTerms = query.toLowerCase().split(/\s+/)
   const docTerms = document.toLowerCase().split(/\s+/)
   const docLen = docTerms.length
-  const avgDl = 200
+  const numDocs = allDocs.length || 1
+  const avgDl = allDocs.reduce((sum, d) => sum + d.split(/\s+/).length, 0) / numDocs || 200
   const k1 = 1.2
   const b = 0.75
 
   let score = 0
   for (const term of queryTerms) {
     const tf = docTerms.filter((t) => t === term).length
-    const idf = Math.log(1 + 1)
+    const docsWithTerm = allDocs.filter(d => d.toLowerCase().includes(term)).length
+    const idf = Math.log((numDocs - docsWithTerm + 0.5) / (docsWithTerm + 0.5) + 1)
     score += idf * ((tf * (k1 + 1)) / (tf + k1 * (1 - b + (b * docLen) / avgDl)))
   }
   return score
@@ -109,10 +111,11 @@ function hybridSearch(
     vectorScore: cosineSimilarity(queryEmbedding, chunk.embedding),
   }))
 
-  // Get BM25 scores
+  // Get BM25 scores (pass all docs for proper IDF calculation)
+  const allDocTexts = chunks.map(c => c.content)
   const bm25Results = chunks.map((chunk) => ({
     chunk,
-    bm25Score: bm25Score(query, chunk.content),
+    bm25Score: bm25Score(query, chunk.content, allDocTexts),
   }))
 
   // Normalize both score sets to 0-1
