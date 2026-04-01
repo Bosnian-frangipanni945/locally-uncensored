@@ -25,7 +25,7 @@ export function AppShell() {
   }
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-white dark:bg-[#212121] text-gray-900 dark:text-white">
+    <div className="h-screen w-screen overflow-hidden bg-white dark:bg-[#0a0a0a] text-gray-900 dark:text-gray-100">
       <div className="h-full flex flex-col">
         <Header />
         <div className="flex-1 flex overflow-hidden">

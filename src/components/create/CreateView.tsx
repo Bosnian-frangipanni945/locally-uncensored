@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { Image, Video, WifiOff, Loader2, CheckCircle, AlertTriangle, RefreshCw, Settings, FolderOpen, ExternalLink, Copy } from 'lucide-react'
+import { Image, Video, WifiOff, Loader2, AlertTriangle, RefreshCw, Settings, FolderOpen, HardDriveDownload } from 'lucide-react'
 import { backendCall } from '../../api/backend'
+import { freeMemory } from '../../api/comfyui'
 import { useCreate } from '../../hooks/useCreate'
 import { useCreateStore } from '../../stores/createStore'
 import { PromptInput } from './PromptInput'
@@ -34,9 +35,11 @@ export function CreateView() {
   const [installing, setInstalling] = useState(false)
   const [installLogs, setInstallLogs] = useState<string[]>([])
   const [installError, setInstallError] = useState('')
+  const [showConnected, setShowConnected] = useState(true)
   const installPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const pollIdRef = useRef(0) // prevent duplicate polling
+  const pollIdRef = useRef(0)
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const pollStatus = useCallback(async () => {
     try {
@@ -55,7 +58,6 @@ export function CreateView() {
     return false
   }, [checkConnection, fetchModels])
 
-  // Initial check + auto-poll (with duplicate prevention)
   useEffect(() => {
     const id = ++pollIdRef.current
     let stopped = false
@@ -84,10 +86,18 @@ export function CreateView() {
     }
   }, [pollStatus])
 
+  // Auto-hide connected bar after 10s
+  useEffect(() => {
+    if (connected === true) {
+      setShowConnected(true)
+      hideTimerRef.current = setTimeout(() => setShowConnected(false), 10000)
+      return () => { if (hideTimerRef.current) clearTimeout(hideTimerRef.current) }
+    }
+  }, [connected])
+
   const retryConnect = async () => {
     setRetrying(true)
     try { await backendCall('start_comfyui') } catch { /* ignore */ }
-    // Single poll attempt
     setTimeout(async () => {
       await pollStatus()
       setRetrying(false)
@@ -99,19 +109,17 @@ export function CreateView() {
 
   return (
     <div className="h-full flex flex-col">
-      {/* Status: ComfyUI not found — setup wizard */}
+      {/* Setup wizard */}
       {notFound && !installing && (
-        <div className="border-b border-red-200 dark:border-red-500/20">
-          <div className="p-4 bg-red-50 dark:bg-red-500/5 space-y-3">
-            <div className="flex items-center gap-2 text-red-600 dark:text-red-400 text-sm font-medium">
-              <WifiOff size={16} />
-              ComfyUI not found — required for image & video generation
+        <div className="border-b border-red-500/20">
+          <div className="p-4 bg-red-500/5 space-y-3">
+            <div className="flex items-center gap-2 text-red-400 text-sm font-medium">
+              <WifiOff size={14} />
+              ComfyUI not found
             </div>
-
-            <div className="bg-white dark:bg-[#2a2a2a] rounded-lg p-4 space-y-4 border border-gray-200 dark:border-white/10">
-              {/* Option 1: Auto-install */}
+            <div className="bg-neutral-900 rounded-lg p-4 space-y-4 border border-white/5">
               <div>
-                <p className="text-xs text-gray-500 mb-2">Option 1: Automatic install (recommended)</p>
+                <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Auto-install</p>
                 <button
                   onClick={async () => {
                     setInstalling(true)
@@ -119,47 +127,41 @@ export function CreateView() {
                     setInstallLogs([])
                     try {
                       await backendCall('install_comfyui')
-                      // Poll install progress
                       installPollRef.current = setInterval(async () => {
                         try {
                           const data = await backendCall('install_comfyui_status')
                           setInstallLogs(data.logs || [])
                           if (data.status === 'complete') {
                             if (installPollRef.current) clearInterval(installPollRef.current)
-                            installPollRef.current = null
                             setInstalling(false)
                             setTimeout(() => pollStatus(), 2000)
                           } else if (data.status === 'error') {
                             if (installPollRef.current) clearInterval(installPollRef.current)
-                            installPollRef.current = null
-                            setInstallError(data.error || 'Installation failed')
+                            setInstallError(data.error || 'Failed')
                             setInstalling(false)
                           }
                         } catch { /* keep polling */ }
                       }, 2000)
                     } catch {
-                      setInstallError('Failed to start installation')
+                      setInstallError('Failed to start')
                       setInstalling(false)
                     }
                   }}
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white text-sm font-medium transition-colors"
+                  className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 text-white text-xs font-medium transition-colors"
                 >
-                  <Download size={16} /> Install ComfyUI Automatically
+                  Install ComfyUI
                 </button>
-                <p className="text-[10px] text-gray-400 mt-1">Clones ComfyUI, installs Python dependencies, and sets up CUDA. Takes 5-10 minutes.</p>
               </div>
-
-              {/* Option 2: Manual path */}
-              <div className="border-t border-gray-200 dark:border-white/5 pt-3">
-                <p className="text-xs text-gray-500 mb-2">Option 2: Already have ComfyUI? Enter the path</p>
+              <div className="border-t border-white/5 pt-3">
+                <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Manual path</p>
                 <div className="flex gap-2">
                   <div className="flex-1 relative">
-                    <FolderOpen size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <FolderOpen size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
                     <input
                       value={comfyPathInput}
                       onChange={(e) => { setComfyPathInput(e.target.value); setPathError('') }}
-                      placeholder="C:\Users\you\ComfyUI"
-                      className="w-full pl-9 pr-3 py-2 rounded-lg bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
+                      placeholder="C:\ComfyUI"
+                      className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-white/20"
                     />
                   </div>
                   <button
@@ -169,102 +171,70 @@ export function CreateView() {
                       setPathError('')
                       try {
                         const data = await backendCall('set_comfyui_path', { path: comfyPathInput.trim() })
-                        if (data.status === 'ok') {
-                          setTimeout(() => pollStatus(), 2000)
-                        } else {
-                          setPathError(data.error || 'Invalid path')
-                        }
-                      } catch {
-                        setPathError('Failed to save path')
-                      }
+                        if (data.status === 'ok') setTimeout(() => pollStatus(), 2000)
+                        else setPathError(data.error || 'Invalid')
+                      } catch { setPathError('Failed') }
                       setPathSaving(false)
                     }}
                     disabled={pathSaving}
-                    className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium transition-colors shrink-0"
+                    className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 disabled:opacity-50 text-white text-xs transition-colors"
                   >
-                    {pathSaving ? <Loader2 size={14} className="animate-spin" /> : 'Connect'}
+                    {pathSaving ? <Loader2 size={12} className="animate-spin" /> : 'Connect'}
                   </button>
                 </div>
-                {pathError && <p className="text-xs text-red-500 mt-1">{pathError}</p>}
+                {pathError && <p className="text-[10px] text-red-400 mt-1">{pathError}</p>}
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* ComfyUI installing */}
+      {/* Installing */}
       {installing && (
-        <div className="border-b border-blue-200 dark:border-blue-500/20">
-          <div className="p-4 bg-blue-50 dark:bg-blue-500/5 space-y-3">
-            <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400 text-sm font-medium">
-              <Loader2 size={16} className="animate-spin" />
-              Installing ComfyUI... This takes 5-10 minutes.
+        <div className="border-b border-white/5">
+          <div className="p-3 bg-white/5 space-y-2">
+            <div className="flex items-center gap-2 text-gray-300 text-xs">
+              <Loader2 size={12} className="animate-spin" />
+              Installing ComfyUI...
             </div>
             {installLogs.length > 0 && (
-              <div className="bg-gray-900 rounded-lg p-3 max-h-40 overflow-y-auto font-mono text-xs text-gray-400">
-                {installLogs.slice(-15).map((log, i) => (
-                  <div key={i} className="truncate">{log}</div>
-                ))}
+              <div className="bg-black rounded-lg p-2 max-h-32 overflow-y-auto font-mono text-[10px] text-gray-500">
+                {installLogs.slice(-10).map((log, i) => <div key={i} className="truncate">{log}</div>)}
               </div>
             )}
-            {installError && (
-              <div className="flex items-center gap-2 text-red-500 text-xs">
-                <AlertTriangle size={14} /> {installError}
-              </div>
-            )}
+            {installError && <p className="text-[10px] text-red-400">{installError}</p>}
           </div>
         </div>
       )}
 
-      {/* Status: ComfyUI is starting */}
+      {/* Starting */}
       {isStarting && !connected && (
-        <div className="border-b border-yellow-200 dark:border-yellow-500/20" role="status">
-          <div className="flex items-center gap-3 px-4 py-3 bg-yellow-50 dark:bg-yellow-500/10 text-yellow-700 dark:text-yellow-400 text-sm">
-            <Loader2 size={16} className="animate-spin shrink-0" />
-            <span>ComfyUI is loading... This can take a minute on first start.</span>
-          </div>
-          {startupLogs.length > 0 && (
-            <div className="px-4 py-2 bg-gray-100 dark:bg-gray-900 text-gray-600 dark:text-gray-400 text-xs font-mono max-h-24 overflow-y-auto">
-              {startupLogs.slice(-8).map((log, i) => (
-                <div key={i} className="truncate">{log.trim()}</div>
-              ))}
-            </div>
-          )}
+        <div className="flex items-center gap-2 px-4 py-2 bg-white/5 border-b border-white/5 text-gray-400 text-xs">
+          <Loader2 size={12} className="animate-spin" />
+          <span>ComfyUI loading...</span>
         </div>
       )}
 
-      {/* Status: Not running — offer retry */}
+      {/* Not responding */}
       {status && !status.running && status.found && !isStarting && !connected && (
-        <div className="flex items-center justify-between px-4 py-3 bg-orange-50 dark:bg-orange-500/10 border-b border-orange-200 dark:border-orange-500/20" role="alert">
-          <div className="flex items-center gap-2 text-orange-600 dark:text-orange-400 text-sm">
-            <AlertTriangle size={16} />
-            <span>ComfyUI found but not responding.</span>
+        <div className="flex items-center justify-between px-4 py-2 bg-orange-500/5 border-b border-orange-500/10 text-xs">
+          <div className="flex items-center gap-2 text-orange-400">
+            <AlertTriangle size={12} />
+            <span>ComfyUI not responding</span>
           </div>
-          <button
-            onClick={retryConnect}
-            disabled={retrying}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white text-xs font-medium transition-colors"
-          >
-            <RefreshCw size={12} className={retrying ? 'animate-spin' : ''} /> {retrying ? 'Retrying...' : 'Retry'}
+          <button onClick={retryConnect} disabled={retrying}
+            className="flex items-center gap-1 px-2 py-1 rounded bg-white/10 hover:bg-white/15 text-white text-[10px] transition-colors">
+            <RefreshCw size={10} className={retrying ? 'animate-spin' : ''} /> Retry
           </button>
         </div>
       )}
 
-      {/* Status: Connected */}
-      {connected === true && (
-        <div className="flex items-center justify-between px-4 py-2 bg-green-50 dark:bg-green-500/10 border-b border-green-200 dark:border-green-500/20 text-green-600 dark:text-green-400 text-sm" role="status">
-          <div className="flex items-center gap-2">
-            <CheckCircle size={16} />
-            <span>
-              ComfyUI connected — {imageModels.length} image model{imageModels.length !== 1 ? 's' : ''}, {videoModels.length} video model{videoModels.length !== 1 ? 's' : ''}
-            </span>
-          </div>
-          <button
-            onClick={fetchModels}
-            className="flex items-center gap-1 text-xs text-green-500 hover:text-green-700 dark:hover:text-green-300 transition-colors"
-            title="Refresh models"
-          >
-            <RefreshCw size={12} /> Refresh
+      {/* Connected — auto-hides after 10s */}
+      {connected === true && showConnected && (
+        <div className="flex items-center justify-between px-4 py-1.5 bg-emerald-500/5 border-b border-emerald-500/10 text-emerald-400 text-[11px] transition-opacity">
+          <span>{imageModels.length} model{imageModels.length !== 1 ? 's' : ''} loaded</span>
+          <button onClick={fetchModels} className="flex items-center gap-1 text-emerald-500/60 hover:text-emerald-400 transition-colors">
+            <RefreshCw size={10} /> Refresh
           </button>
         </div>
       )}
@@ -274,71 +244,80 @@ export function CreateView() {
         <div className="flex-1 flex flex-col overflow-hidden p-4 gap-3">
           {/* Mode switcher */}
           <div className="flex items-center justify-between">
-            <div className="flex gap-1 p-1 bg-gray-100 dark:bg-white/5 rounded-lg">
+            <div className="flex gap-0.5 p-0.5 bg-gray-100 dark:bg-white/5 rounded-lg">
               <button
                 onClick={() => setMode('image')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${
                   mode === 'image' ? 'bg-white dark:bg-white/10 text-gray-900 dark:text-white shadow-sm' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
                 }`}
               >
-                <Image size={14} /> Image
+                <Image size={12} /> Image
               </button>
               <button
                 onClick={() => setMode('video')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${
                   mode === 'video' ? 'bg-white dark:bg-white/10 text-gray-900 dark:text-white shadow-sm' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
                 }`}
               >
-                <Video size={14} /> Video
+                <Video size={12} /> Video
               </button>
             </div>
 
-            {/* Mobile params toggle */}
-            <button
-              onClick={() => setShowParams(!showParams)}
-              className="lg:hidden p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 text-gray-500 dark:text-gray-400"
-              title="Parameters"
-            >
-              <Settings size={18} />
-            </button>
+            <div className="flex items-center gap-1">
+              {connected && (
+                <button
+                  onClick={async () => {
+                    await freeMemory()
+                    setShowConnected(true)
+                    // Brief flash to confirm
+                    const el = document.getElementById('unload-btn')
+                    if (el) { el.textContent = 'Freed!'; setTimeout(() => { el.textContent = '' }, 1500) }
+                  }}
+                  className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 text-[10px] transition-colors"
+                  title="Unload models and free memory"
+                >
+                  <HardDriveDownload size={12} />
+                  <span id="unload-btn"></span>
+                </button>
+              )}
+              <button
+                onClick={() => setShowParams(!showParams)}
+                className="lg:hidden p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 text-gray-500"
+              >
+                <Settings size={14} />
+              </button>
+            </div>
           </div>
 
-          {/* Video status */}
+          {/* Video info */}
           {mode === 'video' && (videoBackend === 'none' || videoModels.length === 0) && connected === true && (
-            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-yellow-50 dark:bg-yellow-500/10 border border-yellow-200 dark:border-yellow-500/20 text-yellow-700 dark:text-yellow-400 text-xs" role="alert">
-              <AlertTriangle size={14} />
-              <span>No video models installed. Add Wan 2.1/2.2 or Hunyuan models to ComfyUI's models/diffusion_models/ folder.</span>
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-yellow-500/5 border border-yellow-500/10 text-yellow-400 text-[11px]">
+              <AlertTriangle size={12} />
+              No video models found
             </div>
           )}
 
-          {mode === 'video' && videoBackend !== 'none' && videoModels.length > 0 && connected === true && (
-            <div className="text-xs text-gray-500 dark:text-gray-400">
-              Video backend: <span className="text-gray-700 dark:text-gray-300 font-medium">{videoBackend === 'wan' ? 'Wan 2.1/2.2' : 'AnimateDiff'}</span>
-              {' · '}{videoModels.length} model{videoModels.length !== 1 ? 's' : ''}
+          {/* Output area */}
+          <div className="flex-1 min-h-0 rounded-xl border border-gray-200 dark:border-white/5 bg-gray-100 dark:bg-white/[0.03] overflow-hidden flex flex-col">
+            <OutputDisplay />
+            <Gallery />
+          </div>
+
+          {/* Error */}
+          {error && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-500/5 border border-red-500/10 text-red-400 text-[11px]">
+              <AlertTriangle size={12} className="shrink-0" />
+              <span className="truncate">{error}</span>
             </div>
           )}
 
           {/* Prompt */}
           <PromptInput onGenerate={generate} onCancel={cancel} disabled={!connected || !modelsLoaded} />
-
-          {/* Error */}
-          {error && (
-            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 text-red-600 dark:text-red-400 text-xs" role="alert">
-              <AlertTriangle size={14} className="shrink-0" />
-              <span>{error}</span>
-            </div>
-          )}
-
-          {/* Output area */}
-          <div className="flex-1 min-h-0 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-[#1a1a1a] overflow-hidden flex flex-col">
-            <OutputDisplay />
-            <Gallery />
-          </div>
         </div>
 
         {/* Parameter sidebar — desktop */}
-        <div className="w-64 border-l border-gray-200 dark:border-white/5 bg-gray-50 dark:bg-[#1a1a1a] p-4 overflow-y-auto scrollbar-thin hidden lg:block">
-          <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">Parameters</h3>
+        <div className="w-56 border-l border-gray-200 dark:border-white/5 bg-gray-50 dark:bg-white/[0.03] p-3 overflow-y-auto scrollbar-thin hidden lg:block">
+          <p className="text-[10px] font-medium text-gray-600 uppercase tracking-widest mb-3">Parameters</p>
           <ParamPanel
             imageModels={imageModels}
             videoModels={videoModels}
@@ -348,18 +327,16 @@ export function CreateView() {
           />
         </div>
 
-        {/* Parameter sidebar — mobile overlay */}
+        {/* Parameter sidebar — mobile */}
         {showParams && (
           <div className="fixed inset-0 z-40 lg:hidden" onClick={() => setShowParams(false)}>
-            <div className="absolute inset-0 bg-black/50" />
-            <div
-              className="absolute right-0 top-0 h-full w-72 bg-white dark:bg-[#1a1a1a] border-l border-gray-200 dark:border-white/5 p-4 overflow-y-auto"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Parameters</h3>
-                <button onClick={() => setShowParams(false)} className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
-                  <Settings size={16} />
+            <div className="absolute inset-0 bg-black/60" />
+            <div className="absolute right-0 top-0 h-full w-64 bg-white dark:bg-[#212121] border-l border-gray-200 dark:border-white/5 p-3 overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-[10px] font-medium text-gray-600 uppercase tracking-widest">Parameters</p>
+                <button onClick={() => setShowParams(false)} className="p-1 text-gray-500 hover:text-gray-300">
+                  <Settings size={12} />
                 </button>
               </div>
               <ParamPanel

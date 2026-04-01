@@ -30,25 +30,28 @@ export function OutputDisplay() {
   if (isGenerating) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-8">
-        <div className="w-full max-w-sm space-y-4">
-          <motion.div
-            className="w-16 h-16 mx-auto rounded-2xl bg-gray-100 dark:bg-white/5 flex items-center justify-center"
-            animate={{ scale: [1, 1.1, 1] }}
-            transition={{ duration: 1.5, repeat: Infinity }}
-          >
-            <span className="text-2xl">{useCreateStore.getState().mode === 'video' ? '🎬' : '🎨'}</span>
-          </motion.div>
-          <div className="space-y-2">
-            <div className="w-full bg-gray-200 dark:bg-white/10 rounded-full h-2 overflow-hidden">
+        <div className="space-y-6 flex flex-col items-center">
+          {/* Minimal pulse ring animation */}
+          <div className="relative w-16 h-16">
+            <motion.div
+              className="absolute inset-0 rounded-full border border-gray-300 dark:border-white/20"
+              animate={{ scale: [1, 1.8], opacity: [0.4, 0] }}
+              transition={{ duration: 2, repeat: Infinity, ease: 'easeOut' }}
+            />
+            <motion.div
+              className="absolute inset-0 rounded-full border border-gray-300 dark:border-white/15"
+              animate={{ scale: [1, 1.5], opacity: [0.3, 0] }}
+              transition={{ duration: 2, repeat: Infinity, ease: 'easeOut', delay: 0.5 }}
+            />
+            <div className="absolute inset-0 rounded-full border border-gray-200 dark:border-white/10 flex items-center justify-center">
               <motion.div
-                className="bg-purple-500 h-full rounded-full"
-                initial={{ width: 0 }}
-                animate={{ width: `${progress}%` }}
-                transition={{ duration: 0.3 }}
+                className="w-2 h-2 rounded-full bg-gray-400 dark:bg-white/40"
+                animate={{ opacity: [0.3, 0.8, 0.3] }}
+                transition={{ duration: 1.5, repeat: Infinity }}
               />
             </div>
-            <p className="text-center text-gray-500 dark:text-gray-400 text-xs">{progressText || `${Math.round(progress)}%`}</p>
           </div>
+          <p className="text-gray-500 text-xs tracking-wide">{progressText || 'Generating...'}</p>
         </div>
       </div>
     )
@@ -58,12 +61,12 @@ export function OutputDisplay() {
   if (!latest) {
     return (
       <div className="flex-1 flex items-center justify-center p-8">
-        <div className="text-center">
-          <div className="w-16 h-16 mx-auto rounded-2xl bg-gray-100 dark:bg-white/5 flex items-center justify-center mb-4">
-            <span className="text-2xl">🖼</span>
+        <div className="text-center space-y-3">
+          <div className="w-12 h-12 mx-auto rounded-full border border-gray-200 dark:border-white/10 flex items-center justify-center">
+            <div className="w-1.5 h-1.5 rounded-full bg-gray-300 dark:bg-white/20" />
           </div>
           <p className="text-gray-400 dark:text-gray-500 text-sm">Your creations will appear here</p>
-          <p className="text-gray-300 dark:text-gray-600 text-xs mt-1">Write a prompt and hit Generate</p>
+          <p className="text-gray-300 dark:text-gray-600 text-xs">Write a prompt and hit Generate</p>
         </div>
       </div>
     )

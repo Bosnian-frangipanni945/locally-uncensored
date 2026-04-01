@@ -12,11 +12,14 @@ import {
   getHistory,
   buildTxt2ImgWorkflow,
   buildTxt2VidWorkflow,
+  classifyModel,
   type ClassifiedModel,
   type ComfyUIOutput,
   type VideoBackend,
 } from '../api/comfyui'
 import { useCreateStore, type GalleryItem } from '../stores/createStore'
+import { useWorkflowStore } from '../stores/workflowStore'
+import { injectParameters } from '../api/workflows'
 
 export function useCreate() {
   const [connected, setConnected] = useState<boolean | null>(null)
@@ -58,13 +61,21 @@ export function useCreate() {
       setVideoBackend(vBackend)
       setModelsLoaded(true)
 
-      // Auto-select first models if none set
       const state = useCreateStore.getState()
+      // Auto-select first models if none set
       if (imgModels.length > 0 && !state.imageModel) {
         state.setImageModel(imgModels[0].name, imgModels[0].type)
       }
       if (vidModels.length > 0 && !state.videoModel) {
         state.setVideoModel(vidModels[0].name)
+      }
+      // Always re-sync model type for currently selected model (fixes stale type after restart)
+      if (state.imageModel && imgModels.length > 0) {
+        const current = imgModels.find(m => m.name === state.imageModel)
+        if (current && current.type !== state.imageModelType) {
+          console.log(`[useCreate] Fixing model type: ${state.imageModelType} -> ${current.type}`)
+          state.setImageModel(state.imageModel, current.type)
+        }
       }
     } catch (err) {
       console.error('[useCreate] Failed to fetch models:', err)
@@ -74,13 +85,15 @@ export function useCreate() {
   const generate = useCallback(async () => {
     const state = useCreateStore.getState()
     const {
-      mode, prompt, negativePrompt, imageModel, imageModelType, videoModel,
+      mode, prompt, negativePrompt, imageModel, videoModel,
       sampler, scheduler, steps, cfgScale, width, height, seed, batchSize, frames, fps,
       setIsGenerating, setProgress, setCurrentPromptId, setError, addToGallery, addToPromptHistory,
     } = state
 
     setError(null)
     const activeModel = mode === 'image' ? imageModel : videoModel
+    // Always re-classify from model name to avoid stale type
+    const imageModelType = classifyModel(activeModel)
 
     if (!prompt.trim()) {
       setError('Please enter a prompt.')
@@ -107,7 +120,29 @@ export function useCreate() {
       const baseParams = { prompt, negativePrompt, model: activeModel, sampler, scheduler, steps, cfgScale, width, height, seed, batchSize }
 
       let workflow: Record<string, any>
-      if (mode === 'video') {
+
+      // Check for custom workflow assignment — but verify it's compatible with the model
+      let customWf = useWorkflowStore.getState().getWorkflowForModel(activeModel, imageModelType)
+      if (customWf) {
+        const wfNodes = Object.values(customWf.workflow).map((n: any) => n.class_type)
+        const needsUnet = imageModelType === 'flux' || imageModelType === 'flux2' || imageModelType === 'wan' || imageModelType === 'hunyuan'
+        const hasUnet = wfNodes.includes('UNETLoader')
+        const hasCheckpoint = wfNodes.includes('CheckpointLoaderSimple')
+        if (needsUnet && !hasUnet && hasCheckpoint) {
+          console.warn('[useCreate] Custom workflow incompatible: model needs UNETLoader but workflow has CheckpointLoaderSimple. Using auto.')
+          customWf = null
+        } else if (!needsUnet && hasUnet && !hasCheckpoint) {
+          console.warn('[useCreate] Custom workflow incompatible: model needs CheckpointLoaderSimple but workflow has UNETLoader. Using auto.')
+          customWf = null
+        }
+      }
+      console.log('[useCreate] Custom workflow check:', { activeModel, imageModelType, found: customWf?.name ?? 'NONE (auto)' })
+
+      if (customWf) {
+        setProgress(5, `Using workflow: ${customWf.name}...`)
+        const params = mode === 'video' ? { ...baseParams, frames, fps } : baseParams
+        workflow = await injectParameters(customWf.workflow, customWf.parameterMap, params, imageModelType)
+      } else if (mode === 'video') {
         setProgress(5, 'Building video workflow...')
         workflow = await buildTxt2VidWorkflow({ ...baseParams, frames, fps }, videoBackend)
       } else {
@@ -169,14 +204,22 @@ export function useCreate() {
 
           try {
             const history = await getHistory(promptId)
-            if (!history) {
-              setProgress(pct, `Generating... ${elapsedSec}s elapsed`)
-              return
-            }
+
+            // Always update elapsed time
+            setProgress(pct, `Generating... ${elapsedSec}s elapsed`)
+
+            if (!history) return
 
             if (history.status?.completed) {
               if (pollRef.current) clearInterval(pollRef.current)
-              setProgress(100, 'Complete!')
+              // Calculate real generation time from ComfyUI timestamps
+              const messages: [string, any][] = history.status?.messages ?? []
+              const startMsg = messages.find(([t]) => t === 'execution_start')
+              const endMsg = messages.find(([t]) => t === 'execution_success')
+              const comfyTime = startMsg?.[1]?.timestamp && endMsg?.[1]?.timestamp
+                ? ((endMsg[1].timestamp - startMsg[1].timestamp) / 1000).toFixed(1)
+                : null
+              setProgress(100, comfyTime ? `Done in ${comfyTime}s` : 'Complete!')
 
               const outputs = history.outputs ?? {}
               let found = false

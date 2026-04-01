@@ -38,7 +38,7 @@ export interface ClassifiedModel {
 
 // ─── Model Classification ───
 
-function classifyModel(name: string): ModelType {
+export function classifyModel(name: string): ModelType {
   const lower = name.toLowerCase()
   if (lower.includes('flux-2') || lower.includes('flux2')) return 'flux2'
   if (lower.includes('flux')) return 'flux'
@@ -227,7 +227,7 @@ export async function detectVideoBackend(): Promise<VideoBackend> {
 
 // ─── Auto-find matching VAE/CLIP for a model ───
 
-async function findMatchingVAE(modelType: ModelType): Promise<string> {
+export async function findMatchingVAE(modelType: ModelType): Promise<string> {
   const vaes = await getVAEModels()
   if (vaes.length === 0) throw new Error('No VAE models found in ComfyUI. Add a VAE to models/vae/')
   const lower = (s: string) => s.toLowerCase()
@@ -251,7 +251,7 @@ async function findMatchingVAE(modelType: ModelType): Promise<string> {
   return vaes[0]
 }
 
-async function findMatchingCLIP(modelType: ModelType): Promise<string> {
+export async function findMatchingCLIP(modelType: ModelType): Promise<string> {
   const clips = await getCLIPModels()
   if (clips.length === 0) throw new Error('No CLIP/text encoder models found. Add one to models/text_encoders/')
   const lower = (s: string) => s.toLowerCase()
@@ -285,8 +285,25 @@ export async function submitWorkflow(workflow: Record<string, any>): Promise<str
     body: JSON.stringify({ prompt: workflow }),
   })
   if (!res.ok) {
-    const err = await res.text()
-    throw new Error(`ComfyUI rejected workflow: ${err}`)
+    const rawText = await res.text().catch(() => '')
+    let errMsg = `HTTP ${res.status}`
+    try {
+      const errData = JSON.parse(rawText)
+      const parts: string[] = []
+      if (errData.error?.message) parts.push(errData.error.message)
+      if (errData.node_errors) {
+        for (const [nodeId, data] of Object.entries(errData.node_errors) as [string, any][]) {
+          const errs = data.errors?.map((e: any) => e.message || e.details).join(', ') || 'unknown'
+          parts.push(`Node ${nodeId} (${data.class_type || '?'}): ${errs}`)
+        }
+      }
+      if (parts.length > 0) errMsg = parts.join(' | ')
+    } catch {
+      if (rawText) errMsg = rawText.slice(0, 500)
+    }
+    console.error('[ComfyUI] Workflow rejected:', errMsg)
+    console.error('[ComfyUI] Submitted workflow:', JSON.stringify(workflow).slice(0, 2000))
+    throw new Error(`ComfyUI rejected workflow: ${errMsg}`)
   }
   const data = await res.json()
   return data.prompt_id
@@ -295,6 +312,16 @@ export async function submitWorkflow(workflow: Record<string, any>): Promise<str
 export async function cancelGeneration(): Promise<void> {
   try {
     await fetch(comfyuiUrl('/interrupt'), { method: 'POST' })
+  } catch { /* best effort */ }
+}
+
+export async function freeMemory(): Promise<void> {
+  try {
+    await fetch(comfyuiUrl('/free'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ unload_models: true, free_memory: true }),
+    })
   } catch { /* best effort */ }
 }
 

@@ -18,8 +18,8 @@ export function Onboarding() {
   const [pulledModels, setPulledModels] = useState<string[]>([])
 
   const isDark = settings.theme === 'dark'
-  const bgClass = isDark ? 'bg-[#212121] text-white' : 'bg-white text-gray-900'
-  const cardClass = isDark ? 'bg-[#2f2f2f] border-white/10' : 'bg-gray-50 border-gray-200'
+  const bgClass = isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-gray-900'
+  const cardClass = isDark ? 'bg-[#141414] border-white/[0.08]' : 'bg-gray-50 border-gray-200'
 
   const toggleModel = (name: string) => {
     setSelectedModels((prev) =>
