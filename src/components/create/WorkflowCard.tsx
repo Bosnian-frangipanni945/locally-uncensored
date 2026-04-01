@@ -1,6 +1,7 @@
 import { Download, Check, ExternalLink, RotateCcw, Star } from 'lucide-react'
 import type { WorkflowSearchResult } from '../../types/workflows'
 import type { ModelType } from '../../api/comfyui'
+import { proxyImageUrl } from '../../lib/privacy'
 
 interface Props {
   result: WorkflowSearchResult
@@ -29,7 +30,7 @@ export function WorkflowCard({ result, isInstalled, isActive, currentModelType, 
       {/* Thumbnail */}
       {result.thumbnailUrl ? (
         <img
-          src={result.thumbnailUrl}
+          src={proxyImageUrl(result.thumbnailUrl)}
           alt={displayName}
           className="w-16 h-16 rounded-lg object-cover flex-shrink-0 bg-white/5"
           loading="lazy"

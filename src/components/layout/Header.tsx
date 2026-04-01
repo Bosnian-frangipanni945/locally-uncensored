@@ -1,4 +1,4 @@
-import { Menu, Settings, Cpu, Sun, Moon, MessageSquare, Film, Layers, Bot } from 'lucide-react'
+import { Menu, Settings, Cpu, Sun, Moon, MessageSquare, Film, Layers, Bot, ShieldCheck } from 'lucide-react'
 import { useUIStore } from '../../stores/uiStore'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useChatStore } from '../../stores/chatStore'
@@ -39,6 +39,10 @@ export function Header() {
 
       {/* Right: Actions */}
       <div className="flex items-center gap-1">
+        <div className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-md bg-emerald-500/10 text-emerald-500 dark:text-emerald-400 mr-1" title="All data stays on your machine. No servers, no tracking.">
+          <ShieldCheck size={12} />
+          <span className="text-[9px] font-medium tracking-wide uppercase">Local</span>
+        </div>
         <button
           onClick={toggleTheme}
           className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"

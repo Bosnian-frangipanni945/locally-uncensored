@@ -221,6 +221,30 @@ function comfyLauncher(): Plugin {
         })
       })
 
+      // API: Privacy image proxy — prevents external servers from tracking users
+      server.middlewares.use('/local-api/proxy-image', (req, res) => {
+        const imgUrl = new URL(req.url || '', 'http://localhost').searchParams.get('url')
+        if (!imgUrl) { res.writeHead(400); res.end(); return }
+        const proto = imgUrl.startsWith('https') ? https : http
+        proto.get(imgUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (upstream) => {
+          if (upstream.statusCode && upstream.statusCode >= 300 && upstream.statusCode < 400 && upstream.headers.location) {
+            proto.get(upstream.headers.location, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (redir) => {
+              res.writeHead(redir.statusCode || 200, {
+                'Content-Type': redir.headers['content-type'] || 'image/jpeg',
+                'Cache-Control': 'public, max-age=86400',
+              })
+              redir.pipe(res)
+            }).on('error', () => { res.writeHead(502); res.end() })
+            return
+          }
+          res.writeHead(upstream.statusCode || 200, {
+            'Content-Type': upstream.headers['content-type'] || 'image/jpeg',
+            'Cache-Control': 'public, max-age=86400',
+          })
+          upstream.pipe(res)
+        }).on('error', () => { res.writeHead(502); res.end() })
+      })
+
       // API: Proxy download (follows redirects server-side, avoids CORS)
       server.middlewares.use('/local-api/proxy-download', (req, res) => {
         const url = new URL(req.url || '', 'http://localhost').searchParams.get('url')

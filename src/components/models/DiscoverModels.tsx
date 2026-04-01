@@ -12,6 +12,7 @@ import { GlowButton } from '../ui/GlowButton'
 import { ProgressBar } from '../ui/ProgressBar'
 import { formatBytes } from '../../lib/formatters'
 import type { ModelCategory } from '../../types/models'
+import { proxyImageUrl } from '../../lib/privacy'
 
 interface Props {
   category: ModelCategory
@@ -355,7 +356,7 @@ export function DiscoverModels({ category }: Props) {
                 return (
                   <div key={model.id} className="flex gap-3 p-3 rounded-lg bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10">
                     {model.thumbnailUrl && (
-                      <img src={model.thumbnailUrl} alt="" className="w-14 h-14 rounded-lg object-cover flex-shrink-0" loading="lazy" />
+                      <img src={proxyImageUrl(model.thumbnailUrl)} alt="" className="w-14 h-14 rounded-lg object-cover flex-shrink-0" loading="lazy" />
                     )}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
