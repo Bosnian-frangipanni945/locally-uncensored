@@ -96,6 +96,20 @@ npm run tauri:build  # Build desktop .exe
 - **No emojis** in code/UI unless explicitly requested
 - **WIP Features**: RAG, Voice, AI Agents — code stays, marked "work in progress"
 
+## Tauri Production (.exe) — CRITICAL
+
+Every feature that works in dev mode MUST also work in the Tauri .exe. The #1 source of bugs:
+
+- **Dual-mode routing**: `src/api/backend.ts` routes `backendCall()` to Vite middleware (dev) or Rust `invoke()` (production)
+- **External API calls**: NEVER use `fetch('/civitai-api/...')` directly. Use `fetchExternal()` from `backend.ts` which works in both modes
+- **External downloads**: NEVER use `fetch('/local-api/proxy-download?url=...')` directly. Use `fetchExternalBytes()` from `backend.ts`
+- **New Vite middleware = new Rust command**: If you add a `/local-api/*` endpoint to `vite.config.ts`, you MUST also implement the equivalent `#[tauri::command]` in `src-tauri/src/commands/`
+- **Endpoint map**: All dev-mode routes must be in the `endpointMap` in `backend.ts`
+- **Download progress**: Uses `Arc<Mutex<HashMap>>` shared between spawned task and progress endpoint. Never use `State<'_>` directly in `tokio::spawn`
+- **Process stdout/stderr**: Always drain piped outputs in background threads or ComfyUI will deadlock
+- **CSP**: `tauri.conf.json` must whitelist external domains for fetch (civitai.com, huggingface.co)
+- **Test the .exe**: After any backend change, verify with `cargo check` in `src-tauri/`
+
 ## Common Pitfalls
 
 - **Vite 8 POST blocking**: All POST to ComfyUI must go through the custom middleware in vite.config.ts, not the standard proxy
@@ -103,3 +117,4 @@ npm run tauri:build  # Build desktop .exe
 - **Model type from store**: Never trust `imageModelType` from createStore at generation time. Always re-classify with `classifyModel(filename)`
 - **CivitAI downloads**: Need API key (user enters in Workflow Finder). Downloads are ZIP archives, not raw JSON
 - **ComfyUI workflow formats**: Two formats exist — API format (`class_type` nodes) and Web/UI format (`nodes[]` + `links[]`). The app handles both via `convertWebToApiFormat()`
+- **CLIP/VAE fallback**: Never silently use wrong model type. Throw descriptive error with download instructions instead
