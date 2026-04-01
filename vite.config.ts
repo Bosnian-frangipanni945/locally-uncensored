@@ -858,51 +858,81 @@ function comfyLauncher(): Plugin {
               })
             }
 
-            // Tier 2: DuckDuckGo Instant Answer API (official, no CAPTCHA)
-            const tryDDGInstant = (): Promise<{ title: string; url: string; snippet: string }[]> => {
-              const ddgUrl = 'https://api.duckduckgo.com/?q=' + encodeURIComponent(query) + '&format=json&no_html=1&skip_disambig=1'
-              return fetchJSON(ddgUrl).then((data: any) => {
-                const results: { title: string; url: string; snippet: string }[] = []
-
-                // Abstract (main answer)
-                if (data.AbstractText && data.AbstractURL) {
-                  results.push({
-                    title: data.Heading || query,
-                    url: data.AbstractURL,
-                    snippet: data.AbstractText,
-                  })
+            // Tier 2: DuckDuckGo HTML search (POST, returns current results)
+            const tryDDGHTML = (): Promise<{ title: string; url: string; snippet: string }[]> => {
+              return new Promise((resolve, reject) => {
+                const postData = 'q=' + encodeURIComponent(query)
+                const options = {
+                  hostname: 'html.duckduckgo.com',
+                  port: 443,
+                  path: '/html/',
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Content-Length': Buffer.byteLength(postData),
+                    'User-Agent': 'Mozilla/5.0 (X11; Linux aarch64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'text/html',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                  },
+                  timeout: 10000,
                 }
+                const httpReq = https.request(options, (response) => {
+                  if (response.statusCode !== 200) {
+                    response.resume()
+                    reject(new Error('DDG HTML returned HTTP ' + response.statusCode))
+                    return
+                  }
+                  let html = ''
+                  response.on('data', (chunk: Buffer) => { html += chunk.toString() })
+                  response.on('end', () => {
+                    try {
+                      const results: { title: string; url: string; snippet: string }[] = []
+                      // Parse result links: <a class="result__a" href="...">title</a>
+                      const linkRegex = /<a[^>]+class="result__a"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi
+                      // Parse snippets: <a class="result__snippet" ...>snippet</a>
+                      const snippetRegex = /<a[^>]+class="result__snippet"[^>]*>([\s\S]*?)<\/a>/gi
 
-                // Related topics
-                if (Array.isArray(data.RelatedTopics)) {
-                  for (const topic of data.RelatedTopics) {
-                    if (results.length >= maxResults) break
-                    if (topic.Text && topic.FirstURL) {
-                      results.push({
-                        title: topic.Text.split(' - ')[0] || topic.Text.substring(0, 80),
-                        url: topic.FirstURL,
-                        snippet: topic.Text,
-                      })
-                    }
-                    // Handle sub-topics (grouped results)
-                    if (Array.isArray(topic.Topics)) {
-                      for (const sub of topic.Topics) {
-                        if (results.length >= maxResults) break
-                        if (sub.Text && sub.FirstURL) {
-                          results.push({
-                            title: sub.Text.split(' - ')[0] || sub.Text.substring(0, 80),
-                            url: sub.FirstURL,
-                            snippet: sub.Text,
-                          })
+                      const links: { title: string; url: string }[] = []
+                      let linkMatch
+                      while ((linkMatch = linkRegex.exec(html)) !== null) {
+                        let url = linkMatch[1]
+                        // DDG wraps URLs in redirect: //duckduckgo.com/l/?uddg=ENCODED_URL
+                        if (url.includes('uddg=')) {
+                          const uddg = url.split('uddg=')[1]?.split('&')[0]
+                          if (uddg) url = decodeURIComponent(uddg)
+                        }
+                        const title = linkMatch[2].replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#x27;/g, "'").replace(/&quot;/g, '"').trim()
+                        if (title && url && url.startsWith('http')) {
+                          links.push({ title, url })
                         }
                       }
-                    }
-                  }
-                }
 
-                if (results.length === 0) throw new Error('DDG Instant returned no results')
-                console.log('[WebSearch] DDG Instant Answer returned ' + results.length + ' results')
-                return results.slice(0, maxResults)
+                      const snippets: string[] = []
+                      let snippetMatch
+                      while ((snippetMatch = snippetRegex.exec(html)) !== null) {
+                        snippets.push(snippetMatch[1].replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/\s+/g, ' ').trim())
+                      }
+
+                      for (let i = 0; i < Math.min(links.length, maxResults); i++) {
+                        results.push({
+                          title: links[i].title,
+                          url: links[i].url,
+                          snippet: snippets[i] || '',
+                        })
+                      }
+
+                      if (results.length === 0) throw new Error('DDG HTML returned no parseable results')
+                      console.log('[WebSearch] DDG HTML returned ' + results.length + ' results')
+                      resolve(results)
+                    } catch (e) {
+                      reject(e)
+                    }
+                  })
+                })
+                httpReq.on('error', reject)
+                httpReq.on('timeout', () => { httpReq.destroy(); reject(new Error('DDG HTML timeout')) })
+                httpReq.write(postData)
+                httpReq.end()
               })
             }
 
@@ -924,7 +954,7 @@ function comfyLauncher(): Plugin {
 
             // Execute tiers in order
             trySearXNG()
-              .catch(() => tryDDGInstant())
+              .catch(() => tryDDGHTML())
               .catch(() => tryWikipedia())
               .then((results) => {
                 res.writeHead(200, { 'Content-Type': 'application/json' })

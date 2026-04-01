@@ -134,13 +134,17 @@ export function stopSpeaking(): void {
   }
 }
 
+export interface AudioRecorderOptions {
+  onInterimTranscript?: (text: string) => void;
+}
+
 interface AudioRecorder {
   start: () => Promise<void>;
   stop: () => Promise<{ blob: Blob; transcript: string }>;
   isRecording: () => boolean;
 }
 
-export function createAudioRecorder(): AudioRecorder {
+export function createAudioRecorder(options?: AudioRecorderOptions): AudioRecorder {
   let mediaRecorder: MediaRecorder | null = null;
   let recognition: any = null;
   let audioChunks: Blob[] = [];
@@ -190,7 +194,12 @@ export function createAudioRecorder(): AudioRecorder {
               interim += result[0].transcript;
             }
           }
-          currentTranscript = final || interim;
+          currentTranscript = final + interim;
+
+          // Fire interim transcript callback for live updates
+          if (options?.onInterimTranscript) {
+            options.onInterimTranscript(currentTranscript);
+          }
         };
 
         recognition.onerror = (event: any) => {

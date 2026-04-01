@@ -13,14 +13,23 @@ import {
 export function useVoice() {
   const store = useVoiceStore();
   const recorderRef = useRef<ReturnType<typeof createAudioRecorder> | null>(null);
+  const onInterimRef = useRef<((text: string) => void) | null>(null);
 
   const sttSupported = isSpeechRecognitionSupported();
   const ttsSupported = isSpeechSynthesisSupported();
 
-  const startRecording = useCallback(async () => {
+  const startRecording = useCallback(async (onInterimTranscript?: (text: string) => void) => {
     if (recorderRef.current?.isRecording()) return;
 
-    const recorder = createAudioRecorder();
+    onInterimRef.current = onInterimTranscript || null;
+
+    const recorder = createAudioRecorder({
+      onInterimTranscript: (text: string) => {
+        if (onInterimRef.current) {
+          onInterimRef.current(text);
+        }
+      },
+    });
     recorderRef.current = recorder;
 
     try {
@@ -41,11 +50,13 @@ export function useVoice() {
       store.setRecording(false);
       store.setTranscript(transcript);
       recorderRef.current = null;
+      onInterimRef.current = null;
       return transcript;
     } catch (err) {
       console.error("Failed to stop recording:", err);
       store.setRecording(false);
       recorderRef.current = null;
+      onInterimRef.current = null;
       return "";
     }
   }, [store]);

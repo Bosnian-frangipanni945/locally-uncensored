@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { AnimatePresence } from 'framer-motion'
 import { useChat } from '../../hooks/useChat'
 import { useChatStore } from '../../stores/chatStore'
 import { useModelStore } from '../../stores/modelStore'
@@ -73,7 +74,9 @@ export function ChatView() {
         <MessageList isGenerating={isGenerating} />
         <ChatInput onSend={sendMessage} onStop={stopGeneration} isGenerating={isGenerating} />
       </div>
-      {ragPanelOpen && <RAGPanel conversationId={activeConversationId} />}
+      <AnimatePresence>
+        {ragPanelOpen && <RAGPanel conversationId={activeConversationId} />}
+      </AnimatePresence>
     </div>
   )
 }

@@ -4,10 +4,12 @@ import { useVoice } from "../../hooks/useVoice"
 
 interface Props {
   onTranscript: (text: string) => void
+  onInterimTranscript?: (text: string) => void
+  onRecordingChange?: (isRecording: boolean) => void
   disabled?: boolean
 }
 
-export function VoiceButton({ onTranscript, disabled }: Props) {
+export function VoiceButton({ onTranscript, onInterimTranscript, onRecordingChange, disabled }: Props) {
   const { isRecording, sttSupported, startRecording, stopRecording } = useVoice()
 
   const handleClick = async () => {
@@ -15,11 +17,13 @@ export function VoiceButton({ onTranscript, disabled }: Props) {
 
     if (isRecording) {
       const transcript = await stopRecording()
+      onRecordingChange?.(false)
       if (transcript.trim()) {
         onTranscript(transcript.trim())
       }
     } else {
-      await startRecording()
+      await startRecording(onInterimTranscript)
+      onRecordingChange?.(true)
     }
   }
 
@@ -48,6 +52,7 @@ export function VoiceButton({ onTranscript, disabled }: Props) {
           ? "bg-red-100 dark:bg-red-500/20 border border-red-300 dark:border-red-500/40 text-red-600 dark:text-red-400"
           : "hover:bg-gray-100 dark:hover:bg-white/10 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
       } disabled:opacity-30 disabled:cursor-not-allowed`}
+      data-voice-button
       whileTap={{ scale: 0.9 }}
     >
       {isRecording && (

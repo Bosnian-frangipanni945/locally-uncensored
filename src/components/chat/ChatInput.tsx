@@ -1,8 +1,7 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { motion } from 'framer-motion'
-import { Send, Square } from 'lucide-react'
+import { Send, Square, Check } from 'lucide-react'
 import { VoiceButton } from './VoiceButton'
-import { useVoiceStore } from '../../stores/voiceStore'
 
 interface Props {
   onSend: (content: string) => void
@@ -12,7 +11,9 @@ interface Props {
 
 export function ChatInput({ onSend, onStop, isGenerating }: Props) {
   const [input, setInput] = useState('')
+  const [isVoiceRecording, setIsVoiceRecording] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const voiceButtonRef = useRef<{ stopRecording: () => void } | null>(null)
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -34,22 +35,40 @@ export function ChatInput({ onSend, onStop, isGenerating }: Props) {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
+      if (isVoiceRecording) return // Don't send while recording
       handleSend()
     }
+  }
+
+  const handleInterimTranscript = useCallback((text: string) => {
+    setInput(text)
+  }, [])
+
+  const handleRecordingChange = useCallback((recording: boolean) => {
+    setIsVoiceRecording(recording)
+  }, [])
+
+  const handleVoiceTranscript = useCallback((text: string) => {
+    // Final transcript received after recording stops
+    setInput(text)
+  }, [])
+
+  // When the checkmark is clicked, we need to trigger the VoiceButton to stop
+  // We do this by simulating a click on the VoiceButton
+  const handleConfirmRecording = () => {
+    // The VoiceButton click handler will stop recording and call onTranscript
+    // which sets the final text. We just need to trigger it.
+    const voiceBtn = document.querySelector('[data-voice-button]') as HTMLElement
+    if (voiceBtn) voiceBtn.click()
   }
 
   return (
     <div className="p-3 border-t border-gray-200 dark:border-white/5">
       <div className="flex items-end gap-2.5 glass-card rounded-xl px-3 py-2.5">
         <VoiceButton
-          onTranscript={(text) => {
-            const autoSend = useVoiceStore.getState().autoSendOnTranscribe
-            if (autoSend) {
-              onSend(text)
-            } else {
-              setInput(text)
-            }
-          }}
+          onTranscript={handleVoiceTranscript}
+          onInterimTranscript={handleInterimTranscript}
+          onRecordingChange={handleRecordingChange}
           disabled={isGenerating}
         />
         <textarea
@@ -57,7 +76,7 @@ export function ChatInput({ onSend, onStop, isGenerating }: Props) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Type a message..."
+          placeholder={isVoiceRecording ? "Listening..." : "Type a message..."}
           rows={1}
           className="flex-1 bg-transparent resize-none text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none text-[0.8rem] leading-relaxed max-h-[200px]"
         />
@@ -68,6 +87,15 @@ export function ChatInput({ onSend, onStop, isGenerating }: Props) {
             whileTap={{ scale: 0.9 }}
           >
             <Square size={15} />
+          </motion.button>
+        ) : isVoiceRecording ? (
+          <motion.button
+            onClick={handleConfirmRecording}
+            className="p-2 rounded-lg bg-green-100 dark:bg-green-500/20 border border-green-300 dark:border-green-500/40 text-green-600 dark:text-green-400 hover:bg-green-200 dark:hover:bg-green-500/30 transition-all shrink-0"
+            whileTap={{ scale: 0.9 }}
+            title="Confirm voice input"
+          >
+            <Check size={15} />
           </motion.button>
         ) : (
           <motion.button
@@ -81,7 +109,7 @@ export function ChatInput({ onSend, onStop, isGenerating }: Props) {
         )}
       </div>
       <p className="text-[0.65rem] text-gray-400 dark:text-gray-600 mt-1.5 text-center">
-        Enter to send · Shift+Enter for new line
+        {isVoiceRecording ? 'Speaking... click checkmark to confirm' : 'Enter to send \u00b7 Shift+Enter for new line'}
       </p>
     </div>
   )
