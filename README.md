@@ -1,6 +1,8 @@
 <div align="center">
 
-# 🔓 Locally Uncensored
+<img src="logo-concepts/concept_3_LU_monogram_bw.png" alt="Locally Uncensored" width="80">
+
+# Locally Uncensored
 
 **The only local AI app that does Chat + Images + Video — all in one beautiful UI.**
 
