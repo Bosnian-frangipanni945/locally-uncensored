@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://purpledoubled.github.io/locally-uncensored/sitemap.xml
+Sitemap: https://locallyuncensored.com/sitemap.xml
