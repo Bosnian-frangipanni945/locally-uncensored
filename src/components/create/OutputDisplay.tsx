@@ -77,11 +77,11 @@ export function OutputDisplay() {
 
   return (
     <>
-      <div className="flex-1 flex flex-col items-center justify-center p-4 relative group min-h-0">
+      <div className="flex-1 flex flex-col items-center justify-center p-4 relative group min-h-0 overflow-hidden">
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="relative max-w-full max-h-full flex flex-col items-center"
+          className="relative flex flex-col items-center min-h-0 max-h-full max-w-full"
         >
           {latest.type === 'video' ? (
             <video
@@ -89,13 +89,13 @@ export function OutputDisplay() {
               controls
               autoPlay
               loop
-              className="max-w-full max-h-[50vh] rounded-xl border border-gray-200 dark:border-white/10"
+              className="max-w-full max-h-full rounded-xl border border-gray-200 dark:border-white/10 object-contain"
             />
           ) : (
             <img
               src={url}
               alt={latest.prompt}
-              className="max-w-full max-h-[50vh] rounded-xl border border-gray-200 dark:border-white/10 object-contain cursor-pointer"
+              className="max-w-full max-h-full rounded-xl border border-gray-200 dark:border-white/10 object-contain cursor-pointer"
               onClick={() => setFullscreen(latest)}
             />
           )}
