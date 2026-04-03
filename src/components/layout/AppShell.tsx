@@ -5,6 +5,7 @@ import { ChatView } from '../chat/ChatView'
 import { ModelManager } from '../models/ModelManager'
 import { SettingsPage } from '../settings/SettingsPage'
 import { CreateView } from '../create/CreateView'
+import { BenchmarkView } from '../models/BenchmarkView'
 import { Onboarding } from '../onboarding/Onboarding'
 import { BackendSelector } from '../onboarding/BackendSelector'
 import { ErrorBoundary } from '../ui/ErrorBoundary'
@@ -75,6 +76,7 @@ export function AppShell() {
           <main className="flex-1 overflow-hidden">
             {currentView === 'chat' && <ErrorBoundary><ChatView /></ErrorBoundary>}
             {currentView === 'models' && <ErrorBoundary><ModelManager /></ErrorBoundary>}
+            {currentView === 'benchmark' && <ErrorBoundary><BenchmarkView /></ErrorBoundary>}
             {currentView === 'settings' && <ErrorBoundary><SettingsPage /></ErrorBoundary>}
             {currentView === 'create' && <ErrorBoundary><CreateView /></ErrorBoundary>}
           </main>

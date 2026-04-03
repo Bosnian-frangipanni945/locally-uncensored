@@ -81,16 +81,7 @@ export function Header() {
         >
           <GitCompareArrows size={14} />
         </button>
-        <button
-          onClick={() => {
-            useCompareStore.getState().setComparing(false)
-            setView('models')
-          }}
-          className="p-1.5 rounded-md transition-colors text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-white/5"
-          title="Benchmark"
-        >
-          <Trophy size={14} />
-        </button>
+        {navBtn('benchmark', <Trophy size={14} />, 'Benchmark')}
         {navBtn('models', <Layers size={14} />, 'Models')}
         {navBtn('settings', <Settings size={14} />, 'Settings')}
       </div>
