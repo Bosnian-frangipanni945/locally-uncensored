@@ -15,6 +15,7 @@ import { useProviderStore } from '../../stores/providerStore'
 import { detectLocalBackends, type DetectedBackend } from '../../lib/backend-detector'
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts'
 import { ShortcutsModal } from './ShortcutsModal'
+import { Titlebar } from './Titlebar'
 
 export function AppShell() {
   const { currentView } = useUIStore()
@@ -70,6 +71,7 @@ export function AppShell() {
   return (
     <div className="h-screen w-screen overflow-hidden bg-white dark:bg-[#0a0a0a] text-gray-900 dark:text-gray-100">
       <div className="h-full flex flex-col">
+        <Titlebar />
         <Header />
         <div className="flex-1 flex overflow-hidden">
           <Sidebar />

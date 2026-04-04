@@ -18,7 +18,8 @@
         "height": 800,
         "resizable": true,
         "fullscreen": false,
-        "visible": false
+        "visible": false,
+        "decorations": false
       }
     ],
     "security": {
@@ -39,7 +40,10 @@
     "windows": {
       "nsis": {
         "installMode": "both",
-        "displayLanguageSelector": true
+        "displayLanguageSelector": true,
+        "installerIcon": "icons/icon.ico",
+        "headerImage": "icons/nsis-header.bmp",
+        "sidebarImage": "icons/nsis-sidebar.bmp"
       }
     }
   }

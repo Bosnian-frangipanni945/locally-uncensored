@@ -96,6 +96,16 @@ input[type="range"]::-webkit-slider-thumb {
   margin-bottom: 0;
 }
 
+/* Titlebar drag region */
+[data-tauri-drag-region] {
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+[data-tauri-drag-region] button {
+  -webkit-app-region: no-drag;
+}
+
 /* Selection */
 ::selection {
   background: rgba(100, 100, 100, 0.3);
