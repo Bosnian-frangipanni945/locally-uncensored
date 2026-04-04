@@ -160,18 +160,78 @@ footer a{color:var(--text-secondary)}
 footer a:hover{color:var(--text)}
 .footer-links{display:flex;gap:20px}
 
+/* Prevent horizontal overflow / pinch-zoom on mobile */
+html,body{overflow-x:hidden}
+
 /* Responsive */
 @media(max-width:768px){
-  .feature-grid{grid-template-columns:1fr}
-  .showcase-grid{grid-template-columns:1fr}
-  .steps{grid-template-columns:1fr}
-  .model-grid{grid-template-columns:1fr}
+  /* Nav */
   .nav-links{display:none}
-  footer{flex-direction:column;gap:16px;text-align:center}
-  .hero h1{font-size:36px;letter-spacing:-1px}
-  .cta-buttons{flex-direction:column;align-items:center}
-  .install-cmd{font-size:11px;padding:12px 16px;letter-spacing:0}
-  .install{padding:60px 16px}
+  .nav-right .btn-nav:not(.btn-nav-primary){display:none}
+  nav{padding:0 16px}
+
+  /* Hero */
+  .hero{padding-top:100px;padding-bottom:48px}
+  .hero h1{font-size:32px;letter-spacing:-1px}
+  .hero p{font-size:15px;margin-bottom:28px}
+  .hero-cta{flex-direction:column;align-items:center;gap:10px}
+  .hero-cta .btn{width:100%;max-width:260px;justify-content:center}
+  .hero-image{border-radius:10px}
+
+  /* Install */
+  .install{padding:48px 16px}
+  .install-cmd{font-size:10px;padding:12px 14px;letter-spacing:0;word-break:break-all;white-space:normal;line-height:1.5}
+
+  /* Sections */
+  section{padding-left:16px;padding-right:16px}
+
+  /* Features */
+  .features{padding:48px 0}
+  .feature-grid{grid-template-columns:1fr}
+  .feature-cell{padding:24px 20px}
+  .section-heading{font-size:26px}
+  .section-desc{font-size:14px;margin-bottom:32px}
+
+  /* Showcase */
+  .showcase-grid{grid-template-columns:1fr}
+
+  /* Agent / v2.0 section */
+  .agent-section{padding:48px 0}
+  .agent-grid{grid-template-columns:1fr;gap:1rem}
+  .agent-card{padding:1.2rem}
+  .agent-highlight{font-size:.82rem;padding:1rem}
+
+  /* Comparison table — horizontal scroll wrapper */
+  .compare{padding:48px 0}
+  .compare-table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap;font-size:13px}
+  .compare-table th,.compare-table td{padding:10px 12px;min-width:90px}
+  .compare-table th:first-child,.compare-table td:first-child{position:sticky;left:0;background:var(--bg);z-index:1}
+
+  /* Steps */
+  .how-it-works{padding:48px 0}
+  .steps{grid-template-columns:1fr;gap:24px}
+
+  /* Models */
+  .models{padding:48px 0}
+  .model-grid{grid-template-columns:1fr;gap:12px}
+  .model-card{padding:20px}
+
+  /* FAQ */
+  .faq{padding:48px 0}
+  .faq-item{padding:18px 0}
+  .faq-item h3{font-size:15px}
+  .faq-item p{font-size:13px}
+
+  /* CTA */
+  .cta{padding:64px 0}
+  .cta h2{font-size:26px}
+  .cta p{font-size:14px}
+  .cta-buttons{flex-direction:column;align-items:center;gap:10px}
+  .cta-buttons .btn{width:100%;max-width:260px;justify-content:center}
+
+  /* Footer */
+  footer{flex-direction:column;gap:16px;text-align:center;padding:24px 16px}
+  .footer-links{gap:16px}
 }
 
 /* Fade in */
