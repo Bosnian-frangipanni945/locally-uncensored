@@ -19,6 +19,7 @@ export interface GenerateParams {
 export interface VideoParams extends GenerateParams {
   frames: number
   fps: number
+  inputImage?: string  // Uploaded image filename for I2V models (SVD, FramePack)
 }
 
 export interface ComfyUIOutput {
@@ -27,7 +28,7 @@ export interface ComfyUIOutput {
   type: string
 }
 
-export type ModelType = 'flux' | 'flux2' | 'sdxl' | 'sd15' | 'wan' | 'hunyuan' | 'ltx' | 'unknown'
+export type ModelType = 'flux' | 'flux2' | 'sdxl' | 'sd15' | 'wan' | 'hunyuan' | 'ltx' | 'mochi' | 'cosmos' | 'cogvideo' | 'svd' | 'framepack' | 'pyramidflow' | 'allegro' | 'unknown'
 export type VideoBackend = 'wan' | 'animatediff' | 'none'
 
 export interface ClassifiedModel {
@@ -60,7 +61,14 @@ const KNOWN_MODELS: Record<string, ModelType> = {
 export function classifyModel(name: string): ModelType {
   const lower = name.toLowerCase()
 
-  // Video models — most specific first
+  // Video models — most specific first (order matters: specific before generic)
+  if (lower.includes('cogvideo')) return 'cogvideo'
+  if (lower.includes('framepack')) return 'framepack'
+  if (lower.includes('mochi')) return 'mochi'
+  if (lower.includes('cosmos')) return 'cosmos'
+  if (lower.includes('allegro')) return 'allegro'
+  if (lower.includes('svd') || lower.includes('stable-video-diffusion')) return 'svd'
+  if (lower.includes('pyramid') && (lower.includes('flow') || lower.includes('dit'))) return 'pyramidflow'
   if (lower.includes('wan')) return 'wan'
   if (lower.includes('hunyuan')) return 'hunyuan'
   if (lower.includes('ltx')) return 'ltx'
@@ -87,12 +95,119 @@ export function classifyModel(name: string): ModelType {
   return 'unknown'
 }
 
-function isImageModelType(type: ModelType): boolean {
+export function isImageModelType(type: ModelType): boolean {
   return type === 'flux' || type === 'flux2' || type === 'sdxl' || type === 'sd15' || type === 'unknown'
 }
 
-function isVideoModelType(type: ModelType): boolean {
-  return type === 'wan' || type === 'hunyuan' || type === 'ltx'
+export function isVideoModelType(type: ModelType): boolean {
+  return type === 'wan' || type === 'hunyuan' || type === 'ltx' || type === 'mochi' || type === 'cosmos'
+    || type === 'cogvideo' || type === 'svd' || type === 'framepack' || type === 'pyramidflow' || type === 'allegro'
+}
+
+// ─── Default generation parameters per model type ───
+
+export interface ModelTypeDefaults {
+  steps: number
+  cfg: number
+  sampler: string
+  scheduler: string
+  width: number
+  height: number
+  frames: number
+  fps: number
+}
+
+export const MODEL_TYPE_DEFAULTS: Record<string, ModelTypeDefaults> = {
+  wan: { steps: 30, cfg: 6.0, sampler: 'euler', scheduler: 'normal', width: 832, height: 480, frames: 81, fps: 16 },
+  hunyuan: { steps: 30, cfg: 6.0, sampler: 'euler', scheduler: 'normal', width: 848, height: 480, frames: 45, fps: 24 },
+  ltx: { steps: 20, cfg: 3.0, sampler: 'euler', scheduler: 'normal', width: 768, height: 512, frames: 97, fps: 24 },
+  mochi: { steps: 30, cfg: 4.5, sampler: 'euler', scheduler: 'normal', width: 848, height: 480, frames: 84, fps: 24 },
+  cosmos: { steps: 35, cfg: 7.0, sampler: 'euler', scheduler: 'normal', width: 1024, height: 1024, frames: 121, fps: 24 },
+  cogvideo: { steps: 50, cfg: 6.0, sampler: 'euler_ancestral', scheduler: 'normal', width: 480, height: 480, frames: 49, fps: 8 },
+  svd: { steps: 20, cfg: 2.5, sampler: 'euler', scheduler: 'karras', width: 576, height: 1024, frames: 25, fps: 6 },
+  framepack: { steps: 25, cfg: 7.0, sampler: 'euler', scheduler: 'normal', width: 640, height: 480, frames: 49, fps: 24 },
+  pyramidflow: { steps: 20, cfg: 7.0, sampler: 'euler', scheduler: 'normal', width: 768, height: 1280, frames: 16, fps: 8 },
+  allegro: { steps: 100, cfg: 7.5, sampler: 'euler', scheduler: 'normal', width: 720, height: 1280, frames: 88, fps: 15 },
+  animatediff: { steps: 20, cfg: 7.5, sampler: 'euler_ancestral', scheduler: 'normal', width: 512, height: 512, frames: 16, fps: 8 },
+  // AnimateDiff Lightning override (4 steps only)
+  animatediff_lightning: { steps: 4, cfg: 1.0, sampler: 'euler', scheduler: 'sgm_uniform', width: 512, height: 512, frames: 16, fps: 8 },
+}
+
+// ─── Component Requirements per model type ───
+
+export interface ComponentSpec {
+  matchPatterns: string[]
+  downloadFilename: string
+  downloadUrl?: string
+}
+
+export interface ComponentRequirements {
+  loader: 'UNETLoader' | 'CheckpointLoaderSimple' | 'ImageOnlyCheckpointLoader'
+  needsSeparateVAE: boolean
+  needsSeparateCLIP: boolean
+  vae?: ComponentSpec
+  clip?: ComponentSpec
+  clipType?: string
+}
+
+export const COMPONENT_REGISTRY: Record<string, ComponentRequirements> = {
+  sd15: { loader: 'CheckpointLoaderSimple', needsSeparateVAE: false, needsSeparateCLIP: false },
+  sdxl: { loader: 'CheckpointLoaderSimple', needsSeparateVAE: false, needsSeparateCLIP: false },
+  flux: {
+    loader: 'UNETLoader', needsSeparateVAE: true, needsSeparateCLIP: true, clipType: 'flux',
+    vae: { matchPatterns: ['flux2', 'flux', 'ae'], downloadFilename: 'flux2-vae.safetensors' },
+    clip: { matchPatterns: ['t5'], downloadFilename: 't5xxl_fp8_e4m3fn.safetensors' },
+  },
+  flux2: {
+    loader: 'UNETLoader', needsSeparateVAE: true, needsSeparateCLIP: true, clipType: 'flux2',
+    vae: { matchPatterns: ['flux2', 'flux'], downloadFilename: 'flux2-vae.safetensors' },
+    clip: { matchPatterns: ['qwen', 'mistral'], downloadFilename: 'qwen_3_4b_fp4_flux2.safetensors' },
+  },
+  wan: {
+    loader: 'UNETLoader', needsSeparateVAE: true, needsSeparateCLIP: true, clipType: 'wan',
+    vae: { matchPatterns: ['wan', 'hunyuan'], downloadFilename: 'wan_2.1_vae.safetensors' },
+    clip: { matchPatterns: ['umt5', 'wan'], downloadFilename: 'umt5_xxl_fp8_e4m3fn_scaled.safetensors' },
+  },
+  hunyuan: {
+    loader: 'UNETLoader', needsSeparateVAE: true, needsSeparateCLIP: true, clipType: 'wan',
+    vae: { matchPatterns: ['hunyuanvideo', 'hunyuan', 'wan'], downloadFilename: 'hunyuanvideo15_vae_fp16.safetensors' },
+    clip: { matchPatterns: ['qwen', 'llava', 'umt5'], downloadFilename: 'qwen_2.5_vl_7b_fp8_scaled.safetensors' },
+  },
+  ltx: {
+    loader: 'UNETLoader', needsSeparateVAE: false, needsSeparateCLIP: true, clipType: 'ltxv',
+    clip: { matchPatterns: ['gemma'], downloadFilename: 'gemma_3_12B_it_fp8_scaled.safetensors' },
+  },
+  mochi: {
+    loader: 'UNETLoader', needsSeparateVAE: true, needsSeparateCLIP: true, clipType: 'mochi',
+    vae: { matchPatterns: ['mochi'], downloadFilename: 'mochi_vae.safetensors' },
+    clip: { matchPatterns: ['t5'], downloadFilename: 't5xxl_fp16.safetensors' },
+  },
+  cosmos: {
+    loader: 'UNETLoader', needsSeparateVAE: true, needsSeparateCLIP: true, clipType: 'cosmos',
+    vae: { matchPatterns: ['cosmos'], downloadFilename: 'cosmos_cv8x8x8_1.0.safetensors' },
+    clip: { matchPatterns: ['oldt5'], downloadFilename: 'oldt5_xxl_fp8_e4m3fn_scaled.safetensors' },
+  },
+  cogvideo: {
+    loader: 'UNETLoader', needsSeparateVAE: true, needsSeparateCLIP: true, clipType: 'cogvideo',
+    vae: { matchPatterns: ['cogvideox', 'cogvideo'], downloadFilename: 'cogvideox_vae.safetensors' },
+    clip: { matchPatterns: ['t5'], downloadFilename: 't5xxl_fp16.safetensors' },
+  },
+  svd: {
+    loader: 'ImageOnlyCheckpointLoader', needsSeparateVAE: false, needsSeparateCLIP: false,
+  },
+  framepack: {
+    loader: 'UNETLoader', needsSeparateVAE: true, needsSeparateCLIP: true, clipType: 'wan',
+    vae: { matchPatterns: ['hunyuan', 'wan'], downloadFilename: 'hunyuan_video_vae_bf16.safetensors' },
+    clip: { matchPatterns: ['llava', 'qwen', 'umt5'], downloadFilename: 'llava_llama3_fp8_scaled.safetensors' },
+  },
+  pyramidflow: {
+    loader: 'UNETLoader', needsSeparateVAE: true, needsSeparateCLIP: false, clipType: 'pyramidflow',
+    vae: { matchPatterns: ['pyramid'], downloadFilename: 'pyramid_flow_vae.safetensors' },
+  },
+  allegro: {
+    loader: 'UNETLoader', needsSeparateVAE: false, needsSeparateCLIP: false, clipType: 'allegro',
+  },
+  unknown: { loader: 'CheckpointLoaderSimple', needsSeparateVAE: false, needsSeparateCLIP: false },
 }
 
 // ─── Connection & Info ───
@@ -312,13 +427,36 @@ export async function findMatchingVAE(modelType: ModelType): Promise<string> {
     throw new Error(`No Wan VAE found. Download "wan_2.1_vae.safetensors" from the Model Manager.`)
   }
   if (modelType === 'ltx') {
-    // LTX Video uses its own VAE embedded in the model — any available VAE as fallback
     const match = vaes.find(v => lower(v).includes('ltx'))
     if (match) return match
-    // LTX models often have built-in VAE, return first available
     return vaes[0]
   }
-  // SDXL/SD1.5 checkpoints include VAE — any VAE works as fallback
+  if (modelType === 'mochi') {
+    const match = vaes.find(v => lower(v).includes('mochi'))
+    if (match) return match
+    throw new Error(`No Mochi VAE found. Download "mochi_vae.safetensors" from the Model Manager.`)
+  }
+  if (modelType === 'cosmos') {
+    const match = vaes.find(v => lower(v).includes('cosmos'))
+    if (match) return match
+    throw new Error(`No Cosmos VAE found. Download "cosmos_cv8x8x8_1.0.safetensors" from the Model Manager.`)
+  }
+  if (modelType === 'cogvideo') {
+    const match = vaes.find(v => lower(v).includes('cogvideox') || lower(v).includes('cogvideo'))
+    if (match) return match
+    throw new Error(`No CogVideoX VAE found. Download "cogvideox_vae.safetensors" from the Model Manager.`)
+  }
+  if (modelType === 'framepack') {
+    const match = vaes.find(v => lower(v).includes('hunyuan') || lower(v).includes('wan'))
+    if (match) return match
+    throw new Error(`No FramePack VAE found. Download "hunyuan_video_vae_bf16.safetensors" from the Model Manager.`)
+  }
+  if (modelType === 'pyramidflow') {
+    const match = vaes.find(v => lower(v).includes('pyramid'))
+    if (match) return match
+    throw new Error(`No Pyramid Flow VAE found. Download from the Model Manager.`)
+  }
+  // SVD / Allegro use checkpoint-embedded VAE, SDXL/SD1.5 too — any VAE works as fallback
   return vaes[0]
 }
 
@@ -355,12 +493,33 @@ export async function findMatchingCLIP(modelType: ModelType): Promise<string> {
     throw new Error(`No Wan text encoder found. Download "umt5_xxl_fp8_e4m3fn_scaled.safetensors" from the Model Manager.`)
   }
   if (modelType === 'ltx') {
-    // LTX Video 2.x uses Gemma 3 as text encoder
     const match = clips.find(c => lower(c).includes('gemma'))
     if (match) return match
     throw new Error(`No LTX Video text encoder found. Download "gemma_3_12B_it_fp8_scaled.safetensors" from the Model Manager.`)
   }
-  // SDXL/SD1.5 checkpoints include CLIP — any works
+  if (modelType === 'mochi') {
+    const match = clips.find(c => lower(c).includes('t5') && !lower(c).includes('umt5') && !lower(c).includes('oldt5'))
+    if (match) return match
+    throw new Error(`No Mochi text encoder found. Download "t5xxl_fp16.safetensors" from the Model Manager.`)
+  }
+  if (modelType === 'cosmos') {
+    // Cosmos uses oldt5, NOT regular t5xxl
+    const match = clips.find(c => lower(c).includes('oldt5'))
+    if (match) return match
+    throw new Error(`No Cosmos text encoder found. Download "oldt5_xxl_fp8_e4m3fn_scaled.safetensors" from the Model Manager.`)
+  }
+  if (modelType === 'cogvideo') {
+    const match = clips.find(c => lower(c).includes('t5') && !lower(c).includes('umt5') && !lower(c).includes('oldt5'))
+    if (match) return match
+    throw new Error(`No CogVideoX text encoder found. Download "t5xxl_fp16.safetensors" from the Model Manager.`)
+  }
+  if (modelType === 'framepack') {
+    const match = clips.find(c => lower(c).includes('llava') || lower(c).includes('qwen'))
+      || clips.find(c => lower(c).includes('umt5'))
+    if (match) return match
+    throw new Error(`No FramePack text encoder found. Download "llava_llama3_fp8_scaled.safetensors" from the Model Manager.`)
+  }
+  // SDXL/SD1.5/SVD/Allegro/PyramidFlow checkpoints include CLIP — any works
   return clips[0]
 }
 
@@ -428,6 +587,22 @@ export async function getHistory(promptId: string): Promise<any> {
   } catch {
     return null
   }
+}
+
+// ─── Upload image to ComfyUI (for I2V models like SVD, FramePack) ───
+
+export async function uploadImage(file: File): Promise<string> {
+  const formData = new FormData()
+  formData.append('image', file)
+  formData.append('overwrite', 'true')
+
+  const res = await localFetch(comfyuiUrl('/upload/image'), {
+    method: 'POST',
+    body: formData,
+  })
+  if (!res.ok) throw new Error(`Failed to upload image: HTTP ${res.status}`)
+  const data = await res.json()
+  return data.name // ComfyUI returns { name, subfolder, type }
 }
 
 export function getImageUrl(filename: string, subfolder: string = '', type: string = 'output'): string {

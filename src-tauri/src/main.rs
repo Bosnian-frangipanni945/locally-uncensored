@@ -30,6 +30,7 @@ fn main() {
             // Installation
             commands::install::install_comfyui,
             commands::install::install_comfyui_status,
+            commands::install::install_custom_node,
             // Whisper STT
             commands::whisper::whisper_status,
             commands::whisper::transcribe,
@@ -52,10 +53,12 @@ fn main() {
             commands::system::pick_folder,
             // Downloads
             commands::download::download_model,
+            commands::download::download_model_to_path,
             commands::download::download_progress,
             commands::download::pause_download,
             commands::download::cancel_download,
             commands::download::resume_download,
+            commands::download::detect_model_path,
             // Web search
             commands::search::web_search,
             commands::search::search_status,

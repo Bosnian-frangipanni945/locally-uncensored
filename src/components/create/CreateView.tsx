@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { Image, Video, WifiOff, Loader2, AlertTriangle, RefreshCw, Settings, FolderOpen, HardDriveDownload, CheckCircle2, XCircle, Download, Pause, Play, X as XIcon } from 'lucide-react'
+import { Image, Video, WifiOff, Loader2, AlertTriangle, RefreshCw, Settings, FolderOpen, HardDriveDownload, CheckCircle2, XCircle, Download, Pause, Play, X as XIcon, Upload, ImagePlus } from 'lucide-react'
 import { backendCall } from '../../api/backend'
-import { freeMemory } from '../../api/comfyui'
+import { freeMemory, uploadImage, classifyModel } from '../../api/comfyui'
 import { startModelDownload, getDownloadProgress, pauseDownload, cancelDownload, resumeDownload } from '../../api/discover'
 import { useCreate } from '../../hooks/useCreate'
 import { useCreateStore } from '../../stores/createStore'
@@ -113,7 +113,7 @@ export function CreateView() {
     connected, imageModels, videoModels, samplerList, schedulerList,
     videoBackend, modelsLoaded, checkConnection, fetchModels, runPreflight, generate, cancel,
   } = useCreate()
-  const { mode, setMode, error, preflightReady, preflightErrors, preflightWarnings } = useCreateStore()
+  const { mode, setMode, error, preflightReady, preflightErrors, preflightWarnings, videoModel, i2vImage, setI2vImage } = useCreateStore()
 
   const [status, setStatus] = useState<ComfyStatus | null>(null)
   const [startupLogs, setStartupLogs] = useState<string[]>([])
@@ -126,6 +126,8 @@ export function CreateView() {
   const [installLogs, setInstallLogs] = useState<string[]>([])
   const [installError, setInstallError] = useState('')
   const [showConnected, setShowConnected] = useState(true)
+  const [i2vUploading, setI2vUploading] = useState(false)
+  const [i2vDragOver, setI2vDragOver] = useState(false)
   const installPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const pollIdRef = useRef(0)
@@ -192,6 +194,29 @@ export function CreateView() {
       await pollStatus()
       setRetrying(false)
     }, 3000)
+  }
+
+  // Detect I2V model (SVD, FramePack need an input image)
+  const videoModelType = videoModel ? classifyModel(videoModel) : null
+  const isI2V = mode === 'video' && (videoModelType === 'svd' || videoModelType === 'framepack')
+
+  const handleI2vUpload = async (file: File) => {
+    if (!file.type.startsWith('image/')) return
+    setI2vUploading(true)
+    try {
+      const filename = await uploadImage(file)
+      setI2vImage(filename)
+    } catch (err) {
+      console.error('[CreateView] I2V image upload failed:', err)
+    }
+    setI2vUploading(false)
+  }
+
+  const handleI2vDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    setI2vDragOver(false)
+    const file = e.dataTransfer.files[0]
+    if (file) handleI2vUpload(file)
   }
 
   const isStarting = status?.starting || status?.processAlive
@@ -421,6 +446,59 @@ export function CreateView() {
             <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-yellow-500/5 border border-yellow-500/10 text-yellow-400 text-[11px]">
               <AlertTriangle size={12} />
               No video models found
+            </div>
+          )}
+
+          {/* I2V Image Upload — shown when SVD or FramePack model is selected */}
+          {isI2V && connected === true && (
+            <div
+              onDragOver={(e) => { e.preventDefault(); setI2vDragOver(true) }}
+              onDragLeave={() => setI2vDragOver(false)}
+              onDrop={handleI2vDrop}
+              className={`relative rounded-lg border-2 border-dashed transition-colors ${
+                i2vDragOver
+                  ? 'border-blue-400 bg-blue-500/10'
+                  : i2vImage
+                    ? 'border-emerald-500/30 bg-emerald-500/5'
+                    : 'border-white/10 bg-white/[0.02] hover:border-white/20'
+              }`}
+            >
+              {i2vImage ? (
+                <div className="flex items-center justify-between px-3 py-2">
+                  <div className="flex items-center gap-2 text-emerald-400 text-[11px]">
+                    <CheckCircle2 size={12} />
+                    <span className="truncate max-w-[200px]">{i2vImage}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <label className="cursor-pointer px-2 py-0.5 rounded text-[10px] text-gray-400 hover:text-white hover:bg-white/10 transition-colors">
+                      Replace
+                      <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleI2vUpload(f) }} />
+                    </label>
+                    <button
+                      onClick={() => setI2vImage(null)}
+                      className="p-0.5 rounded text-gray-500 hover:text-red-400 hover:bg-white/10 transition-colors"
+                      title="Remove image"
+                    >
+                      <XIcon size={10} />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <label className="flex flex-col items-center gap-1 px-3 py-3 cursor-pointer">
+                  {i2vUploading ? (
+                    <Loader2 size={16} className="animate-spin text-gray-400" />
+                  ) : (
+                    <ImagePlus size={16} className="text-gray-500" />
+                  )}
+                  <span className="text-[11px] text-gray-400">
+                    {i2vUploading ? 'Uploading...' : 'Drop or click to upload input image'}
+                  </span>
+                  <span className="text-[9px] text-gray-600">
+                    {videoModelType === 'svd' ? 'SVD' : 'FramePack'} generates video from an image
+                  </span>
+                  <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleI2vUpload(f) }} />
+                </label>
+              )}
             </div>
           )}
 

@@ -16,6 +16,13 @@ export type WorkflowStrategy =
   | 'unet_flux2'      // FLUX 2: UNETLoader + CLIPLoader + VAELoader + EmptyFlux2LatentImage
   | 'unet_video'      // Wan/Hunyuan: UNETLoader + CLIPLoader + VAELoader + EmptyHunyuanLatentVideo
   | 'unet_ltx'        // LTX Video: UNETLoader + CLIPLoader + EmptyLTXVLatentVideo
+  | 'unet_mochi'      // Mochi: UNETLoader + CLIPLoader + VAELoader + EmptyMochiLatentVideo
+  | 'unet_cosmos'     // Cosmos: UNETLoader + CLIPLoader(oldt5) + VAELoader + EmptyCosmosLatentVideo
+  | 'svd'             // SVD: ImageOnlyCheckpointLoader + SVD_img2vid_Conditioning
+  | 'cogvideo'        // CogVideoX: Kijai wrapper nodes
+  | 'framepack'       // FramePack: Kijai wrapper + image input
+  | 'pyramidflow'     // Pyramid Flow: Kijai wrapper nodes
+  | 'allegro'         // Allegro: Community wrapper nodes
   | 'checkpoint'      // SDXL/SD1.5: CheckpointLoaderSimple + EmptyLatentImage
   | 'animatediff'     // AnimateDiff: CheckpointLoaderSimple + ADE_* nodes
   | 'unavailable'
@@ -25,7 +32,7 @@ interface StrategyResult {
   reason: string
 }
 
-function determineStrategy(
+export function determineStrategy(
   modelType: ModelType,
   isVideo: boolean,
   nodes: CategorizedNodes,
@@ -69,6 +76,67 @@ function determineStrategy(
     return { strategy: 'unavailable', reason: 'Wan/Hunyuan requires UNETLoader + CLIPLoader + VAELoader nodes' }
   }
 
+  // Mochi → UNET + EmptyMochiLatentVideo (native)
+  if (modelType === 'mochi') {
+    if (hasUNET && hasCLIPLoader && hasVAELoader) {
+      return { strategy: 'unet_mochi', reason: 'Mochi → UNETLoader + EmptyMochiLatentVideo' }
+    }
+    return { strategy: 'unavailable', reason: 'Mochi requires UNETLoader + CLIPLoader + VAELoader nodes' }
+  }
+
+  // Cosmos → UNET + EmptyCosmosLatentVideo (native, oldt5 encoder)
+  if (modelType === 'cosmos') {
+    if (hasUNET && hasCLIPLoader && hasVAELoader) {
+      return { strategy: 'unet_cosmos', reason: 'Cosmos → UNETLoader + EmptyCosmosLatentVideo (oldt5)' }
+    }
+    return { strategy: 'unavailable', reason: 'Cosmos requires UNETLoader + CLIPLoader + VAELoader nodes' }
+  }
+
+  // SVD → ImageOnlyCheckpointLoader (native, I2V)
+  if (modelType === 'svd') {
+    const hasIOCL = nodes.loaders.includes('ImageOnlyCheckpointLoader')
+    if (hasIOCL) {
+      return { strategy: 'svd', reason: 'SVD → ImageOnlyCheckpointLoader + SVD_img2vid_Conditioning' }
+    }
+    return { strategy: 'unavailable', reason: 'SVD requires ImageOnlyCheckpointLoader node' }
+  }
+
+  // CogVideoX → Kijai wrapper nodes
+  if (modelType === 'cogvideo') {
+    const hasCogNodes = nodes.samplers.includes('CogVideoXSampler')
+    if (hasCogNodes) {
+      return { strategy: 'cogvideo', reason: 'CogVideoX → Kijai wrapper pipeline' }
+    }
+    return { strategy: 'unavailable', reason: 'CogVideoX requires ComfyUI-CogVideoXWrapper custom nodes. Install them from the Model Manager.' }
+  }
+
+  // FramePack → Kijai wrapper nodes (I2V)
+  if (modelType === 'framepack') {
+    const hasFPNodes = nodes.samplers.includes('FramePackSampler')
+    if (hasFPNodes) {
+      return { strategy: 'framepack', reason: 'FramePack → Kijai wrapper pipeline (I2V)' }
+    }
+    return { strategy: 'unavailable', reason: 'FramePack requires ComfyUI-FramePackWrapper custom nodes. Install them from the Model Manager.' }
+  }
+
+  // Pyramid Flow → Kijai wrapper nodes
+  if (modelType === 'pyramidflow') {
+    const hasPFNodes = nodes.samplers.includes('PyramidFlowSampler')
+    if (hasPFNodes) {
+      return { strategy: 'pyramidflow', reason: 'Pyramid Flow → Kijai wrapper pipeline' }
+    }
+    return { strategy: 'unavailable', reason: 'Pyramid Flow requires ComfyUI-PyramidFlowWrapper custom nodes. Install them from the Model Manager.' }
+  }
+
+  // Allegro → Community wrapper nodes
+  if (modelType === 'allegro') {
+    const hasAllegroNodes = nodes.samplers.includes('AllegroSampler')
+    if (hasAllegroNodes) {
+      return { strategy: 'allegro', reason: 'Allegro → Community wrapper pipeline' }
+    }
+    return { strategy: 'unavailable', reason: 'Allegro requires ComfyUI-Allegro custom nodes. Install them from the Model Manager.' }
+  }
+
   // SDXL / SD1.5 / Unknown
   if (isVideo && hasAnimateDiff && hasCheckpoint && models.motionModels.length > 0) {
     return { strategy: 'animatediff', reason: 'Video mode → AnimateDiff pipeline' }
@@ -108,10 +176,30 @@ export async function buildDynamicWorkflow(
     throw new Error(reason)
   }
 
+  const seed = params.seed === -1 ? Math.floor(Math.random() * 2147483647) : params.seed
+
+  // ─── Wrapper Strategies (custom node pipelines — completely different node chains) ───
+
+  if (strategy === 'cogvideo') {
+    return buildCogVideoWorkflow(params as VideoParams, seed, nodes)
+  }
+  if (strategy === 'svd') {
+    return buildSVDWorkflow(params as VideoParams, seed, nodes)
+  }
+  if (strategy === 'framepack') {
+    return buildFramePackWorkflow(params as VideoParams, seed, nodes)
+  }
+  if (strategy === 'pyramidflow') {
+    return buildPyramidFlowWorkflow(params as VideoParams, seed, nodes)
+  }
+  if (strategy === 'allegro') {
+    return buildAllegroWorkflow(params as VideoParams, seed, nodes)
+  }
+
+  // ─── Standard Strategies (UNET/Checkpoint → CLIP → Latent → KSampler → VAEDecode) ───
+
   const workflow: Record<string, any> = {}
   let n = 1 // node counter
-
-  const seed = params.seed === -1 ? Math.floor(Math.random() * 2147483647) : params.seed
 
   // ─── Phase 1: Model Loading ───
 
@@ -135,7 +223,8 @@ export async function buildDynamicWorkflow(
     vaeOutputSlot = 2
     samplerModelId = modelNodeId
 
-  } else if (strategy === 'unet_flux' || strategy === 'unet_flux2' || strategy === 'unet_video' || strategy === 'unet_ltx') {
+  } else if (strategy === 'unet_flux' || strategy === 'unet_flux2' || strategy === 'unet_video' || strategy === 'unet_ltx'
+    || strategy === 'unet_mochi' || strategy === 'unet_cosmos') {
     // Separate loaders
     const unetId = String(n++)
     const clipId = String(n++)
@@ -143,7 +232,9 @@ export async function buildDynamicWorkflow(
     const clipType = type === 'flux2' ? 'flux2'
       : type === 'flux' ? 'flux'
       : type === 'ltx' ? 'ltxv'
-      : (type === 'wan' || type === 'hunyuan') ? 'wan'
+      : (type === 'wan' || type === 'hunyuan' || type === 'framepack') ? 'wan'
+      : type === 'mochi' ? 'mochi'
+      : type === 'cosmos' ? 'cosmos'
       : 'flux'
 
     let vae: string, clip: string
@@ -253,6 +344,24 @@ export async function buildDynamicWorkflow(
     workflow[latentId] = {
       class_type: 'EmptyLatentImage',
       inputs: { width: params.width, height: params.height, batch_size: videoParams.frames },
+    }
+  } else if (strategy === 'unet_mochi') {
+    // Mochi video latent
+    const latentNode = nodes.latentInit.includes('EmptyMochiLatentVideo')
+      ? 'EmptyMochiLatentVideo'
+      : 'EmptyHunyuanLatentVideo'
+    workflow[latentId] = {
+      class_type: latentNode,
+      inputs: { width: params.width, height: params.height, length: videoParams.frames, batch_size: 1 },
+    }
+  } else if (strategy === 'unet_cosmos') {
+    // Cosmos video latent
+    const latentNode = nodes.latentInit.includes('EmptyCosmosLatentVideo')
+      ? 'EmptyCosmosLatentVideo'
+      : 'EmptyHunyuanLatentVideo'
+    workflow[latentId] = {
+      class_type: latentNode,
+      inputs: { width: params.width, height: params.height, length: videoParams.frames, batch_size: 1 },
     }
   } else if (strategy === 'unet_ltx') {
     // LTX Video latent — uses length instead of batch_size
@@ -372,5 +481,162 @@ export async function buildDynamicWorkflow(
     Object.entries(workflow).map(([id, node]) => `${id}:${node.class_type}`).join(' → ')
   )
 
+  return workflow
+}
+
+// ─── Wrapper Workflow Builders ───
+
+function addVideoOutput(workflow: Record<string, any>, n: number, decodeId: string, fps: number, nodes: CategorizedNodes): number {
+  const saveId = String(n++)
+  if (nodes.videoSavers.includes('VHS_VideoCombine')) {
+    workflow[saveId] = {
+      class_type: 'VHS_VideoCombine',
+      inputs: { images: [decodeId, 0], frame_rate: fps, loop_count: 0, filename_prefix: 'locally_uncensored_vid', format: 'video/h264-mp4', pingpong: false, save_output: true },
+    }
+  } else if (nodes.videoSavers.includes('SaveAnimatedWEBP')) {
+    workflow[saveId] = {
+      class_type: 'SaveAnimatedWEBP',
+      inputs: { images: [decodeId, 0], filename_prefix: 'locally_uncensored_vid', fps, lossless: false, quality: 90, method: 'default' },
+    }
+  } else {
+    workflow[saveId] = {
+      class_type: 'SaveImage',
+      inputs: { images: [decodeId, 0], filename_prefix: 'locally_uncensored_vid' },
+    }
+  }
+  return n
+}
+
+function buildCogVideoWorkflow(params: VideoParams, seed: number, nodes: CategorizedNodes): Record<string, any> {
+  const workflow: Record<string, any> = {}
+  let n = 1
+
+  const modelId = String(n++)
+  const clipId = String(n++)
+  const posId = String(n++)
+  const negId = String(n++)
+  const latentId = String(n++)
+  const samplerId = String(n++)
+  const decodeId = String(n++)
+
+  workflow[modelId] = { class_type: 'CogVideoXModelLoader', inputs: { model: params.model } }
+  workflow[clipId] = { class_type: 'CogVideoXCLIPLoader', inputs: { clip_name: 't5xxl_fp16.safetensors' } }
+  workflow[posId] = { class_type: 'CogVideoXTextEncode', inputs: { text: params.prompt, clip: [clipId, 0] } }
+  workflow[negId] = { class_type: 'CogVideoXTextEncode', inputs: { text: params.negativePrompt || '', clip: [clipId, 0] } }
+  workflow[latentId] = { class_type: 'CogVideoXEmptyLatents', inputs: { width: params.width, height: params.height, frames: params.frames, batch_size: 1 } }
+  workflow[samplerId] = {
+    class_type: 'CogVideoXSampler',
+    inputs: { model: [modelId, 0], positive: [posId, 0], negative: [negId, 0], latents: [latentId, 0], seed, steps: params.steps, cfg: params.cfgScale },
+  }
+  workflow[decodeId] = { class_type: 'CogVideoXVAEDecode', inputs: { samples: [samplerId, 0], vae: [modelId, 1] } }
+
+  addVideoOutput(workflow, n, decodeId, params.fps, nodes)
+  return workflow
+}
+
+function buildSVDWorkflow(params: VideoParams, seed: number, nodes: CategorizedNodes): Record<string, any> {
+  const workflow: Record<string, any> = {}
+  let n = 1
+
+  const loaderId = String(n++)
+  const imageId = String(n++)
+  const condId = String(n++)
+  const guidanceId = String(n++)
+  const samplerId = String(n++)
+  const decodeId = String(n++)
+
+  workflow[loaderId] = { class_type: 'ImageOnlyCheckpointLoader', inputs: { ckpt_name: params.model } }
+  workflow[imageId] = { class_type: 'LoadImage', inputs: { image: params.inputImage || 'input_image.png' } }
+  workflow[condId] = {
+    class_type: 'SVD_img2vid_Conditioning',
+    inputs: {
+      clip_vision: [loaderId, 1], init_image: [imageId, 0], vae: [loaderId, 2],
+      augmentation_level: 0.0, width: params.width, height: params.height,
+      video_frames: params.frames, motion_bucket_id: 127, fps: params.fps,
+    },
+  }
+  workflow[guidanceId] = { class_type: 'VideoLinearCFGGuidance', inputs: { model: [loaderId, 0], min_cfg: 1.0 } }
+  workflow[samplerId] = {
+    class_type: 'KSampler',
+    inputs: { model: [guidanceId, 0], positive: [condId, 0], negative: [condId, 1], latent_image: [condId, 2], seed, steps: params.steps, cfg: params.cfgScale, sampler_name: params.sampler, scheduler: params.scheduler, denoise: 1.0 },
+  }
+  workflow[decodeId] = { class_type: 'VAEDecode', inputs: { samples: [samplerId, 0], vae: [loaderId, 2] } }
+
+  addVideoOutput(workflow, n, decodeId, params.fps, nodes)
+  return workflow
+}
+
+function buildFramePackWorkflow(params: VideoParams, seed: number, nodes: CategorizedNodes): Record<string, any> {
+  const workflow: Record<string, any> = {}
+  let n = 1
+
+  const modelId = String(n++)
+  const clipId = String(n++)
+  const clipVisionId = String(n++)
+  const vaeId = String(n++)
+  const imageId = String(n++)
+  const encodeId = String(n++)
+  const posId = String(n++)
+  const samplerId = String(n++)
+  const decodeId = String(n++)
+
+  workflow[modelId] = { class_type: 'FramePackModelLoader', inputs: { model: params.model } }
+  workflow[clipId] = { class_type: 'CLIPLoader', inputs: { clip_name: 'llava_llama3_fp8_scaled.safetensors', type: 'wan', device: 'default' } }
+  workflow[clipVisionId] = { class_type: 'CLIPVisionLoader', inputs: { clip_name: 'sigclip_vision_384.safetensors' } }
+  workflow[vaeId] = { class_type: 'VAELoader', inputs: { vae_name: 'hunyuanvideo15_vae_fp16.safetensors' } }
+  workflow[imageId] = { class_type: 'LoadImage', inputs: { image: params.inputImage || 'input_image.png' } }
+  workflow[encodeId] = { class_type: 'FramePackEncode', inputs: { image: [imageId, 0], clip_vision: [clipVisionId, 0] } }
+  workflow[posId] = { class_type: 'CLIPTextEncode', inputs: { text: params.prompt, clip: [clipId, 0] } }
+  workflow[samplerId] = {
+    class_type: 'FramePackSampler',
+    inputs: { model: [modelId, 0], positive: [posId, 0], image_embeds: [encodeId, 0], latent: [encodeId, 1], seed, steps: params.steps, cfg: params.cfgScale },
+  }
+  workflow[decodeId] = { class_type: 'VAEDecode', inputs: { samples: [samplerId, 0], vae: [vaeId, 0] } }
+
+  addVideoOutput(workflow, n, decodeId, params.fps, nodes)
+  return workflow
+}
+
+function buildPyramidFlowWorkflow(params: VideoParams, seed: number, nodes: CategorizedNodes): Record<string, any> {
+  const workflow: Record<string, any> = {}
+  let n = 1
+
+  const modelId = String(n++)
+  const vaeId = String(n++)
+  const posId = String(n++)
+  const samplerId = String(n++)
+  const decodeId = String(n++)
+
+  workflow[modelId] = { class_type: 'PyramidFlowModelLoader', inputs: { model: params.model } }
+  workflow[vaeId] = { class_type: 'PyramidFlowVAELoader', inputs: { vae: 'pyramid_flow_vae.safetensors' } }
+  workflow[posId] = { class_type: 'PyramidFlowTextEncode', inputs: { text: params.prompt } }
+  workflow[samplerId] = {
+    class_type: 'PyramidFlowSampler',
+    inputs: { model: [modelId, 0], vae: [vaeId, 0], text: [posId, 0], seed, steps: params.steps, cfg: params.cfgScale, width: params.width, height: params.height, frames: params.frames },
+  }
+  workflow[decodeId] = { class_type: 'PyramidFlowDecode', inputs: { samples: [samplerId, 0] } }
+
+  addVideoOutput(workflow, n, decodeId, params.fps, nodes)
+  return workflow
+}
+
+function buildAllegroWorkflow(params: VideoParams, seed: number, nodes: CategorizedNodes): Record<string, any> {
+  const workflow: Record<string, any> = {}
+  let n = 1
+
+  const modelId = String(n++)
+  const posId = String(n++)
+  const samplerId = String(n++)
+  const decodeId = String(n++)
+
+  workflow[modelId] = { class_type: 'AllegroModelLoader', inputs: { model: params.model } }
+  workflow[posId] = { class_type: 'AllegroTextEncode', inputs: { text: params.prompt } }
+  workflow[samplerId] = {
+    class_type: 'AllegroSampler',
+    inputs: { model: [modelId, 0], text: [posId, 0], seed, steps: params.steps, cfg: params.cfgScale, width: params.width, height: params.height, frames: params.frames },
+  }
+  workflow[decodeId] = { class_type: 'AllegroDecoder', inputs: { samples: [samplerId, 0] } }
+
+  addVideoOutput(workflow, n, decodeId, params.fps, nodes)
   return workflow
 }

@@ -115,3 +115,87 @@ pub fn install_comfyui_status(state: State<'_, AppState>) -> Result<serde_json::
         "logs": install.logs,
     }))
 }
+
+#[tauri::command]
+pub fn install_custom_node(
+    state: State<'_, AppState>,
+    repo_url: String,
+    node_name: String,
+) -> Result<serde_json::Value, String> {
+    // Find ComfyUI path from state
+    let comfy_path = {
+        let path = state.comfy_path.lock().unwrap();
+        path.clone()
+    };
+
+    let comfy_dir = match comfy_path {
+        Some(p) => PathBuf::from(p),
+        None => {
+            // Try to find it
+            match crate::commands::process::find_comfyui_path() {
+                Some(p) => PathBuf::from(p),
+                None => return Err("ComfyUI not found. Install ComfyUI first.".to_string()),
+            }
+        }
+    };
+
+    let custom_nodes_dir = comfy_dir.join("custom_nodes");
+    let target_dir = custom_nodes_dir.join(&node_name);
+
+    // Create custom_nodes dir if it doesn't exist
+    if !custom_nodes_dir.exists() {
+        fs::create_dir_all(&custom_nodes_dir)
+            .map_err(|e| format!("Failed to create custom_nodes directory: {}", e))?;
+    }
+
+    if target_dir.exists() {
+        // Already exists — git pull to update
+        println!("[Install] Custom node {} already exists, updating...", node_name);
+        let output = Command::new("git")
+            .args(["pull"])
+            .current_dir(&target_dir)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .map_err(|e| format!("Git pull failed: {}", e))?;
+
+        let status = if output.status.success() { "updated" } else { "update_failed" };
+        Ok(serde_json::json!({
+            "status": status,
+            "path": target_dir.to_string_lossy(),
+        }))
+    } else {
+        // Clone the repo
+        println!("[Install] Cloning custom node {} from {}", node_name, repo_url);
+        let output = Command::new("git")
+            .args(["clone", &repo_url])
+            .arg(&target_dir)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .map_err(|e| format!("Git clone failed: {}", e))?;
+
+        if output.status.success() {
+            // Install requirements.txt if it exists
+            let reqs = target_dir.join("requirements.txt");
+            if reqs.exists() {
+                let python_bin = state.python_bin.clone();
+                println!("[Install] Installing requirements for {}...", node_name);
+                let _ = Command::new(&python_bin)
+                    .args(["-m", "pip", "install", "-r"])
+                    .arg(&reqs)
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .output();
+            }
+
+            Ok(serde_json::json!({
+                "status": "installed",
+                "path": target_dir.to_string_lossy(),
+            }))
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Err(format!("Failed to clone {}: {}", node_name, stderr))
+        }
+    }
+}

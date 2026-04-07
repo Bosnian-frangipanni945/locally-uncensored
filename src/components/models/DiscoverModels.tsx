@@ -3,14 +3,19 @@ import { motion } from 'framer-motion'
 import { Download, RefreshCw, ExternalLink, Search, Info, CheckCircle, XCircle, Loader2 } from 'lucide-react'
 import { Pause, Play, X } from 'lucide-react'
 import {
-  fetchAbliteratedModels, searchOllamaModels, getImageBundles, getVideoBundles,
+  fetchAbliteratedModels, searchOllamaModels, searchHuggingFaceModels,
+  getImageBundles, getVideoBundles,
   getUncensoredTextModels, getMainstreamTextModels,
+  getHuggingFaceUncensoredModels, getHuggingFaceMainstreamModels,
+  detectProviderModelPath, startModelDownloadToPath,
   startModelDownload, getDownloadProgress, searchCivitaiModels,
-  pauseDownload, cancelDownload, resumeDownload,
+  installBundleComplete,
   type DiscoverModel, type DownloadProgress, type ModelBundle, type CivitAIModelResult,
 } from '../../api/discover'
 import { getSystemVRAM } from '../../api/comfyui'
+import { useDownloadStore } from '../../stores/downloadStore'
 import { useModels } from '../../hooks/useModels'
+import { useProviderStore } from '../../stores/providerStore'
 import { GlassCard } from '../ui/GlassCard'
 import { GlowButton } from '../ui/GlowButton'
 import { ProgressBar } from '../ui/ProgressBar'
@@ -44,7 +49,7 @@ function VariantPullButton({ model, pullModel, isPullingModel, isInstalled }: {
   // If no size tags or only one, show simple button
   if (tags.length <= 1) {
     const fullName = tags.length === 1 ? `${model.name}:${tags[0].toLowerCase()}` : model.name
-    if (isInstalled(model.name)) {
+    if (isInstalled(fullName)) {
       return <span className="text-xs text-green-500 px-2 py-1">Installed</span>
     }
     return (
@@ -116,7 +121,7 @@ function ModelDiscoverCard({ model, index, isText, getModelDownloadState, pullMo
   const isDownloading = dlState?.status === 'downloading' || dlState?.status === 'connecting'
   const isComplete = dlState?.status === 'complete'
   const isError = dlState?.status === 'error'
-  const canDirectDownload = !!model.downloadUrl && !!model.filename && !!model.subfolder
+  const canDirectDownload = !!model.downloadUrl && !!model.filename
 
   return (
     <motion.div
@@ -127,15 +132,13 @@ function ModelDiscoverCard({ model, index, isText, getModelDownloadState, pullMo
       <GlassCard className="p-3">
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0">
-            <h3 className="text-sm font-medium text-gray-900 dark:text-white truncate flex items-center gap-1.5">
+            <h3 className="text-sm font-medium text-gray-900 dark:text-white flex items-center gap-1.5 flex-wrap">
               {isInstalled(model.name) && <span className="text-[0.55rem] px-1.5 py-0.5 rounded bg-green-500/15 text-green-500 font-bold border border-green-500/30 shrink-0">INSTALLED</span>}
               {model.hot && !isInstalled(model.name) && <span className="text-[0.55rem] px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-500 font-bold border border-orange-500/30 shrink-0">HOT</span>}
               {model.agent && <span className="text-[0.55rem] px-1.5 py-0.5 rounded bg-green-500/15 text-green-500 font-bold border border-green-500/30 shrink-0">AGENT</span>}
-              <span className="truncate">{model.name}</span>
+              <span>{model.description || model.name}</span>
             </h3>
-            {model.description && (
-              <p className="text-xs text-gray-500 mt-0.5">{model.description}</p>
-            )}
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 truncate">{model.name}</p>
             <div className="flex items-center gap-2 mt-1.5 flex-wrap">
               {model.tags.map((tag) => (
                 <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-400">
@@ -167,7 +170,28 @@ function ModelDiscoverCard({ model, index, isText, getModelDownloadState, pullMo
           </div>
 
           <div className="flex items-center gap-1 shrink-0">
-            {isText ? (
+            {isText && model.canPull === false ? (
+              <span className="text-xs text-green-500 px-2 py-1 rounded bg-green-500/10">Available</span>
+            ) : isText && canDirectDownload ? (
+              /* HuggingFace GGUF: direct download button */
+              isComplete ? (
+                <span className="flex items-center gap-1 text-xs text-green-500 px-2 py-1">
+                  <CheckCircle size={12} /> Downloaded
+                </span>
+              ) : isDownloading ? (
+                <span className="p-2 text-gray-400">
+                  <Loader2 size={14} className="animate-spin" />
+                </span>
+              ) : (
+                <button
+                  onClick={() => handleDownload(model)}
+                  className="p-2 rounded-lg bg-green-100 dark:bg-green-500/15 hover:bg-green-200 dark:hover:bg-green-500/25 text-green-700 dark:text-green-400 transition-all"
+                  title={`Download ${model.sizeGB ? model.sizeGB + ' GB' : ''}`}
+                >
+                  <Download size={14} />
+                </button>
+              )
+            ) : isText ? (
               <VariantPullButton model={model} pullModel={pullModel} isPullingModel={isPullingModel} isInstalled={isInstalled} />
             ) : (
               <>
@@ -209,49 +233,46 @@ export function DiscoverModels({ category }: Props) {
   const [civitaiQuery, setCivitaiQuery] = useState('')
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
-  const [downloads, setDownloads] = useState<Record<string, DownloadProgress>>({})
-  const [downloadMeta, setDownloadMeta] = useState<Record<string, { url: string; subfolder: string }>>({})
   const [systemVRAM, setSystemVRAM] = useState<number | null>(null)
   const [subTab, setSubTab] = useState<'uncensored' | 'mainstream'>('uncensored')
+  const [vramTier, setVramTier] = useState<'all' | 'lightweight' | 'mid' | 'highend'>('all')
   const { pullModel, isPullingModel, models: installedModels } = useModels()
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const downloads = useDownloadStore(s => s.downloads)
+  const dlStore = useDownloadStore
 
-  // Load text models from Ollama search
+  // Multi-provider state
+  const providers = useProviderStore(s => s.providers)
+  const [discoverSource, setDiscoverSource] = useState<'ollama' | 'huggingface'>('ollama')
+  const [hfModelPath, setHfModelPath] = useState<string | null>(null)
+  const isOllama = discoverSource === 'ollama'
+
+  // Load text models based on selected source
   useEffect(() => {
-    if (category === 'text') {
-      setLoading(true)
+    if (category !== 'text') return
+    setLoading(true)
+
+    setSearch('')
+    setHfSearchResults([])
+
+    if (discoverSource === 'ollama') {
       fetchAbliteratedModels().then(m => { setTextModels(m); setLoading(false) })
+    } else {
+      // Auto-detect provider model path for downloads
+      const providerName = providers.openai?.name || 'LM Studio'
+      detectProviderModelPath(providerName).then(path => setHfModelPath(path))
+      setLoading(false)
     }
-  }, [category])
+  }, [category, discoverSource])
 
   // Detect system VRAM
   useEffect(() => {
     getSystemVRAM().then(v => setSystemVRAM(v))
   }, [])
 
-  // Poll download progress
+  // Start polling on mount if there are active downloads
   useEffect(() => {
-    const hasActive = Object.values(downloads).some(d => d.status === 'downloading' || d.status === 'connecting' || d.status === 'pausing')
-    if (hasActive && !pollRef.current) {
-      pollRef.current = setInterval(async () => {
-        const prog = await getDownloadProgress()
-        setDownloads(prev => {
-          for (const [id, d] of Object.entries(prog)) {
-            if (d.status === 'complete' && prev[id]?.status !== 'complete') {
-              window.dispatchEvent(new CustomEvent('comfyui-model-downloaded'))
-            }
-          }
-          return prog
-        })
-        const stillActive = Object.values(prog).some(d => d.status === 'downloading' || d.status === 'connecting' || d.status === 'pausing')
-        if (!stillActive && pollRef.current) {
-          clearInterval(pollRef.current)
-          pollRef.current = null
-        }
-      }, 1000)
-    }
-    return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null } }
-  }, [downloads])
+    dlStore.getState().refresh()
+  }, [])
 
   const isText = category === 'text'
   const isImage = category === 'image'
@@ -294,56 +315,55 @@ export function DiscoverModels({ category }: Props) {
   })
 
   const tabFilteredBundles = sortedBundles.filter(b => subTab === 'uncensored' ? b.uncensored : !b.uncensored)
-  const filteredBundles = search
-    ? tabFilteredBundles.filter((b) => b.name.toLowerCase().includes(search.toLowerCase()) || b.description.toLowerCase().includes(search.toLowerCase()))
-    : tabFilteredBundles
 
-  const isInstalled = (name: string) => installedModels.some((m) => m.name.startsWith(name.split(':')[0]))
+  // VRAM tier filtering for bundles
+  const vramFilteredBundles = tabFilteredBundles.filter(b => {
+    if (vramTier === 'all') return true
+    const vram = parseVRAM(b.vramRequired)
+    if (vramTier === 'lightweight') return vram <= 10
+    if (vramTier === 'mid') return vram > 10 && vram <= 16
+    return vram > 16 // highend
+  })
+
+  const filteredBundles = search
+    ? vramFilteredBundles.filter((b) => b.name.toLowerCase().includes(search.toLowerCase()) || b.description.toLowerCase().includes(search.toLowerCase()))
+    : vramFilteredBundles
+
+  const isInstalled = (name: string) => {
+    return installedModels.some((m) => m.name === name)
+  }
 
   const handleDownload = async (model: DiscoverModel) => {
     if (!model.downloadUrl || !model.filename || !model.subfolder) return
-    // Store meta for resume
-    setDownloadMeta(prev => ({ ...prev, [model.filename!]: { url: model.downloadUrl!, subfolder: model.subfolder! } }))
-    const result = await startModelDownload(model.downloadUrl, model.subfolder, model.filename)
-    if (result.status === 'started' || result.status === 'already_exists') {
-      const prog = await getDownloadProgress()
-      setDownloads(prog)
-    }
+    dlStore.getState().setMeta(model.filename, model.downloadUrl, model.subfolder)
+    await startModelDownload(model.downloadUrl, model.subfolder, model.filename)
+    dlStore.getState().startPolling()
   }
+
+  const [installingBundle, setInstallingBundle] = useState<string | null>(null)
 
   const handleBundleInstall = async (bundle: ModelBundle) => {
+    setInstallingBundle(bundle.name)
+    const filenames: string[] = []
     for (const file of bundle.files) {
       if (file.downloadUrl && file.filename && file.subfolder) {
-        setDownloadMeta(prev => ({ ...prev, [file.filename!]: { url: file.downloadUrl!, subfolder: file.subfolder! } }))
-        await startModelDownload(file.downloadUrl, file.subfolder, file.filename)
+        dlStore.getState().setMeta(file.filename, file.downloadUrl, file.subfolder)
+        filenames.push(file.filename)
       }
     }
-    const prog = await getDownloadProgress()
-    setDownloads(prog)
+    dlStore.getState().setBundleGroup(bundle.name, filenames)
+    try {
+      await installBundleComplete(bundle)
+    } catch (err) {
+      console.error('[DiscoverModels] Bundle install failed:', err)
+    }
+    dlStore.getState().startPolling()
+    setInstallingBundle(null)
   }
 
-  const handlePause = async (id: string) => {
-    await pauseDownload(id)
-    const prog = await getDownloadProgress()
-    setDownloads(prog)
-  }
-
-  const handleCancel = async (id: string) => {
-    await cancelDownload(id)
-    setDownloads(prev => {
-      const updated = { ...prev }
-      delete updated[id]
-      return updated
-    })
-  }
-
-  const handleResume = async (id: string) => {
-    const meta = downloadMeta[id]
-    if (!meta) return
-    await resumeDownload(id, meta.url, meta.subfolder)
-    const prog = await getDownloadProgress()
-    setDownloads(prog)
-  }
+  const handlePause = async (id: string) => { await dlStore.getState().pause(id) }
+  const handleCancel = async (id: string) => { await dlStore.getState().cancel(id) }
+  const handleResume = async (id: string) => { await dlStore.getState().resume(id) }
 
   const handleCivitaiSearch = async () => {
     if (!civitaiQuery.trim()) return
@@ -355,15 +375,9 @@ export function DiscoverModels({ category }: Props) {
 
   const handleCivitaiDownload = async (model: CivitAIModelResult) => {
     if (!model.downloadUrl || !model.filename || !model.subfolder) return
-    // CivitAI downloads need the proxy
-    const url = model.downloadUrl.startsWith('http')
-      ? `/local-api/proxy-download?url=${encodeURIComponent(model.downloadUrl)}`
-      : model.downloadUrl
-    const result = await startModelDownload(model.downloadUrl, model.subfolder, model.filename)
-    if (result.status === 'started' || result.status === 'already_exists') {
-      const prog = await getDownloadProgress()
-      setDownloads(prog)
-    }
+    dlStore.getState().setMeta(model.filename, model.downloadUrl, model.subfolder)
+    await startModelDownload(model.downloadUrl, model.subfolder, model.filename)
+    dlStore.getState().startPolling()
   }
 
   const isBundleComplete = (bundle: ModelBundle): boolean => {
@@ -392,6 +406,8 @@ export function DiscoverModels({ category }: Props) {
 
   // Progress calculation moved to DownloadBadge in Header
 
+  const [hfSearchResults, setHfSearchResults] = useState<DiscoverModel[]>([])
+
   const handleOllamaSearch = async () => {
     if (!search.trim() || !isText) return
     setLoading(true)
@@ -402,8 +418,22 @@ export function DiscoverModels({ category }: Props) {
     setLoading(false)
   }
 
-  const uncensoredModels = isText ? getUncensoredTextModels() : []
-  const mainstreamModels = isText ? getMainstreamTextModels() : []
+  const handleHfSearch = async () => {
+    if (!search.trim() || !isText) return
+    setLoading(true)
+    try {
+      const results = await searchHuggingFaceModels(search.trim())
+      setHfSearchResults(results)
+    } catch { /* keep existing */ }
+    setLoading(false)
+  }
+
+  const uncensoredModels = isText
+    ? (isOllama ? getUncensoredTextModels() : getHuggingFaceUncensoredModels())
+    : []
+  const mainstreamModels = isText
+    ? (isOllama ? getMainstreamTextModels() : getHuggingFaceMainstreamModels())
+    : []
 
   const filteredUncensored = search
     ? uncensoredModels.filter((m) => m.name.toLowerCase().includes(search.toLowerCase()) || m.description.toLowerCase().includes(search.toLowerCase()))
@@ -414,17 +444,46 @@ export function DiscoverModels({ category }: Props) {
 
   const title = isText ? 'Discover LUncensored' : isImage ? 'Discover LUncensored' : 'Discover LUncensored'
   const subtitle = isText
-    ? 'Search the Ollama registry or browse curated models.'
+    ? (isOllama ? 'Search the Ollama registry or browse curated models.'
+      : `Download GGUF models from HuggingFace.${hfModelPath ? ` Saves to: ${hfModelPath}` : ''}`)
     : isImage
       ? 'Browse image generation models for ComfyUI.'
       : 'Browse video generation models for ComfyUI.'
 
+  const handleRefresh = () => {
+    setLoading(true)
+    if (isOllama) fetchAbliteratedModels().then(m => { setTextModels(m); setLoading(false) })
+    else { setHfModels(getHuggingFaceModels()); setLoading(false) }
+  }
+
+  const handleHfDownload = async (model: DiscoverModel) => {
+    if (!model.downloadUrl || !model.filename) return
+    const destDir = hfModelPath || (await detectProviderModelPath(providers.openai?.name || 'fallback'))
+    if (!destDir) return
+    setHfModelPath(destDir)
+    try {
+      await startModelDownloadToPath(model.downloadUrl, destDir, model.filename)
+      dlStore.getState().startPolling()
+    } catch (e) {
+      console.error('HF download failed:', e)
+    }
+  }
+
+  // Unified download handler — routes to HF or ComfyUI based on source
+  const handleModelDownload = (model: DiscoverModel) => {
+    if (!isOllama && isText) {
+      handleHfDownload(model)
+    } else {
+      handleDownload(model)
+    }
+  }
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 scale-[0.87] origin-top-left w-[115%]">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{title}</h2>
         {isText && (
-          <GlowButton variant="secondary" onClick={() => { setLoading(true); fetchAbliteratedModels().then(m => { setTextModels(m); setLoading(false) }) }} disabled={loading} aria-label="Refresh">
+          <GlowButton variant="secondary" onClick={handleRefresh} disabled={loading} aria-label="Refresh">
             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
           </GlowButton>
         )}
@@ -432,13 +491,32 @@ export function DiscoverModels({ category }: Props) {
 
       <p className="text-sm text-gray-500">{subtitle}</p>
 
+      {/* Source Selector — Ollama (pull) or HuggingFace (GGUF download) */}
+      {isText && (
+        <div className="flex gap-2">
+          {(['ollama', 'huggingface'] as const).map(src => (
+            <button
+              key={src}
+              onClick={() => setDiscoverSource(src)}
+              className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${
+                discoverSource === src
+                  ? 'bg-white/15 text-white border border-white/20'
+                  : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'
+              }`}
+            >
+              {src === 'ollama' ? 'Ollama' : 'HuggingFace'}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="relative">
         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && isText) handleOllamaSearch() }}
-          placeholder={isText ? 'Search Ollama registry... (Enter to search)' : 'Filter models...'}
+          onKeyDown={(e) => { if (e.key === 'Enter' && isText) { isOllama ? handleOllamaSearch() : handleHfSearch() } }}
+          placeholder={isText ? (isOllama ? 'Search Ollama registry... (Enter to search)' : 'Search HuggingFace GGUF models... (Enter to search)') : 'Filter models...'}
           className="w-full pl-9 pr-3 py-2 rounded-lg bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:border-gray-400 dark:focus:border-white/30"
         />
       </div>
@@ -489,36 +567,63 @@ export function DiscoverModels({ category }: Props) {
         </p>
       )}
 
-      {/* Sub-tabs: Uncensored / Mainstream — all categories */}
-      <div className="flex gap-4 mb-4">
-        <button
-          onClick={() => setSubTab('uncensored')}
-          className={`flex items-center gap-2 transition-all ${
-            subTab === 'uncensored' ? 'opacity-100' : 'opacity-40 hover:opacity-70'
-          }`}
-        >
-          <div className={`w-1 h-5 rounded-full ${subTab === 'uncensored' ? 'bg-red-500' : 'bg-red-500/50'}`} />
-          <span className="text-[0.75rem] font-semibold text-gray-900 dark:text-white uppercase tracking-wider">Uncensored</span>
-          <span className="text-[0.55rem] text-gray-500">{isText ? 'No filters, no limits' : 'No content filter'}</span>
-        </button>
-        <button
-          onClick={() => setSubTab('mainstream')}
-          className={`flex items-center gap-2 transition-all ${
-            subTab === 'mainstream' ? 'opacity-100' : 'opacity-40 hover:opacity-70'
-          }`}
-        >
-          <div className={`w-1 h-5 rounded-full ${subTab === 'mainstream' ? 'bg-blue-500' : 'bg-blue-500/50'}`} />
-          <span className="text-[0.75rem] font-semibold text-gray-900 dark:text-white uppercase tracking-wider">Mainstream</span>
-          <span className="text-[0.55rem] text-gray-500">{isText ? 'Tool calling + vision' : 'Popular + high quality'}</span>
-        </button>
-      </div>
+      {/* Sub-tabs: Uncensored / Mainstream — for all text sources and image/video */}
+      {(isText || isImage || isVideo) && (
+        <div className="flex gap-4 mb-4">
+          <button
+            onClick={() => setSubTab('uncensored')}
+            className={`flex items-center gap-2 transition-all ${
+              subTab === 'uncensored' ? 'opacity-100' : 'opacity-40 hover:opacity-70'
+            }`}
+          >
+            <div className={`w-1 h-5 rounded-full ${subTab === 'uncensored' ? 'bg-red-500' : 'bg-red-500/50'}`} />
+            <span className="text-[0.75rem] font-semibold text-gray-900 dark:text-white uppercase tracking-wider">Uncensored</span>
+            <span className="text-[0.55rem] text-gray-500">{isText ? 'No filters, no limits' : 'No content filter'}</span>
+          </button>
+          <button
+            onClick={() => setSubTab('mainstream')}
+            className={`flex items-center gap-2 transition-all ${
+              subTab === 'mainstream' ? 'opacity-100' : 'opacity-40 hover:opacity-70'
+            }`}
+          >
+            <div className={`w-1 h-5 rounded-full ${subTab === 'mainstream' ? 'bg-blue-500' : 'bg-blue-500/50'}`} />
+            <span className="text-[0.75rem] font-semibold text-gray-900 dark:text-white uppercase tracking-wider">Mainstream</span>
+            <span className="text-[0.55rem] text-gray-500">{isText ? 'Tool calling + vision' : 'Popular + high quality'}</span>
+          </button>
+        </div>
+      )}
+
+      {/* VRAM Tier Filter — for image/video bundles */}
+      {(isImage || isVideo) && sortedBundles.length > 0 && (
+        <div className="flex gap-1.5">
+          {([
+            { key: 'all', label: 'All', desc: '' },
+            { key: 'lightweight', label: 'Lightweight', desc: '6-10 GB' },
+            { key: 'mid', label: 'Mid-Range', desc: '12-16 GB' },
+            { key: 'highend', label: 'High-End', desc: '20+ GB' },
+          ] as const).map(tier => (
+            <button
+              key={tier.key}
+              onClick={() => setVramTier(tier.key)}
+              className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all ${
+                vramTier === tier.key
+                  ? 'bg-white/15 text-white border border-white/20'
+                  : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'
+              }`}
+            >
+              {tier.label}
+              {tier.desc && <span className="text-[9px] text-gray-500 ml-1">{tier.desc}</span>}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Model Bundles (Image + Video) — same grid style as text models */}
       {(isImage || isVideo) && filteredBundles.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {filteredBundles.map((bundle, bi) => {
             const complete = isBundleComplete(bundle)
-            const downloading = isBundleDownloading(bundle)
+            const downloading = isBundleDownloading(bundle) || installingBundle === bundle.name
             const bundleProgress = getBundleProgress(bundle)
 
             return (
@@ -583,6 +688,10 @@ export function DiscoverModels({ category }: Props) {
             )
           })}
         </div>
+      )}
+
+      {(isImage || isVideo) && sortedBundles.length > 0 && filteredBundles.length === 0 && (
+        <p className="text-center text-gray-500 py-4 text-sm">No models match this VRAM tier. Try a different filter.</p>
       )}
 
       {/* CivitAI Search (Image & Video) */}
@@ -655,15 +764,21 @@ export function DiscoverModels({ category }: Props) {
         </GlassCard>
       )}
 
+      {/* HuggingFace model path info */}
+      {!isOllama && isText && hfModelPath && (
+        <p className="text-[0.65rem] text-gray-500 truncate">
+          Downloads save to: {hfModelPath}
+        </p>
+      )}
+
       {loading ? (
         <div className="text-center py-8 text-gray-500">Loading models...</div>
       ) : isText ? (
         <>
-          {/* Active sub-tab content */}
           {subTab === 'uncensored' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {filteredUncensored.map((model, i) => (
-                <ModelDiscoverCard key={model.name} model={model} index={i} isText={isText} getModelDownloadState={getModelDownloadState} pullModel={pullModel} isPullingModel={isPullingModel} isInstalled={isInstalled} handleDownload={handleDownload} />
+                <ModelDiscoverCard key={model.name} model={model} index={i} isText={isText} getModelDownloadState={getModelDownloadState} pullModel={pullModel} isPullingModel={isPullingModel} isInstalled={isInstalled} handleDownload={handleModelDownload} />
               ))}
               {filteredUncensored.length === 0 && (
                 <p className="text-center text-gray-500 py-4 col-span-2">No uncensored models match your search</p>
@@ -673,7 +788,7 @@ export function DiscoverModels({ category }: Props) {
           {subTab === 'mainstream' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {filteredMainstream.map((model, i) => (
-                <ModelDiscoverCard key={model.name} model={model} index={i} isText={isText} getModelDownloadState={getModelDownloadState} pullModel={pullModel} isPullingModel={isPullingModel} isInstalled={isInstalled} handleDownload={handleDownload} />
+                <ModelDiscoverCard key={model.name} model={model} index={i} isText={isText} getModelDownloadState={getModelDownloadState} pullModel={pullModel} isPullingModel={isPullingModel} isInstalled={isInstalled} handleDownload={handleModelDownload} />
               ))}
               {filteredMainstream.length === 0 && (
                 <p className="text-center text-gray-500 py-4 col-span-2">No mainstream models match your search</p>
@@ -681,27 +796,39 @@ export function DiscoverModels({ category }: Props) {
             </div>
           )}
 
-          {/* Search Results (only when searching, show extra results not in curated lists) */}
-          {search && filtered.filter(m => !uncensoredModels.some(u => u.name === m.name) && !mainstreamModels.some(u => u.name === m.name)).length > 0 && (
+          {/* Ollama Search Results */}
+          {isOllama && search && filtered.filter(m => !uncensoredModels.some(u => u.name === m.name) && !mainstreamModels.some(u => u.name === m.name)).length > 0 && (
             <div className="space-y-3 mt-6">
               <h3 className="text-[0.7rem] font-semibold text-gray-500 uppercase tracking-wider">Search Results</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {filtered.filter(m => !uncensoredModels.some(u => u.name === m.name) && !mainstreamModels.some(u => u.name === m.name)).map((model, i) => (
-                  <ModelDiscoverCard key={model.name} model={model} index={i} isText={isText} getModelDownloadState={getModelDownloadState} pullModel={pullModel} isPullingModel={isPullingModel} isInstalled={isInstalled} handleDownload={handleDownload} />
+                  <ModelDiscoverCard key={model.name} model={model} index={i} isText={isText} getModelDownloadState={getModelDownloadState} pullModel={pullModel} isPullingModel={isPullingModel} isInstalled={isInstalled} handleDownload={handleModelDownload} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* HuggingFace Search Results */}
+          {!isOllama && hfSearchResults.length > 0 && (
+            <div className="space-y-3 mt-6">
+              <h3 className="text-[0.7rem] font-semibold text-gray-500 uppercase tracking-wider">HuggingFace Search Results</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {hfSearchResults.map((model, i) => (
+                  <ModelDiscoverCard key={model.name + i} model={model} index={i} isText={isText} getModelDownloadState={getModelDownloadState} pullModel={pullModel} isPullingModel={isPullingModel} isInstalled={isInstalled} handleDownload={handleModelDownload} />
                 ))}
               </div>
             </div>
           )}
         </>
-      ) : !isVideo && (
+      ) : !isVideo ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {filtered.map((model, i) => (
             <ModelDiscoverCard key={model.name} model={model} index={i} isText={false} getModelDownloadState={getModelDownloadState} pullModel={pullModel} isPullingModel={isPullingModel} isInstalled={isInstalled} handleDownload={handleDownload} />
           ))}
         </div>
-      )}
+      ) : null}
 
-      {!loading && filtered.length === 0 && filteredBundles.length === 0 && filteredUncensored.length === 0 && filteredMainstream.length === 0 && (
+      {!loading && isOllama && filtered.length === 0 && filteredBundles.length === 0 && filteredUncensored.length === 0 && filteredMainstream.length === 0 && (
         <p className="text-center text-gray-500 py-4">No models found</p>
       )}
     </div>

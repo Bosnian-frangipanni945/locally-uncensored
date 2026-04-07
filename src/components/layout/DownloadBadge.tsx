@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowDownToLine, Pause, Play, X, CheckCircle } from 'lucide-react'
 import { useModels } from '../../hooks/useModels'
+import { useDownloadStore } from '../../stores/downloadStore'
 import { formatBytes } from '../../lib/formatters'
 
 function ProgressBar({ progress }: { progress: number }) {
@@ -14,12 +15,31 @@ function ProgressBar({ progress }: { progress: number }) {
 
 export function DownloadBadge() {
   const { activePulls, pullModel, pausePull, dismissPull } = useModels()
+  const comfyDownloads = useDownloadStore(s => s.downloads)
+  const bundleMap = useDownloadStore(s => s.bundleMap)
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
-  const entries = Object.entries(activePulls)
-  const activeCount = entries.filter(([, s]) => !s.paused && !s.complete).length
-  const hasAny = entries.length > 0
+  // Text model entries
+  const textEntries = Object.entries(activePulls)
+  const textActiveCount = textEntries.filter(([, s]) => !s.paused && !s.complete).length
+
+  // ComfyUI (image/video) entries — group by bundle
+  const comfyEntries = Object.entries(comfyDownloads).filter(([, d]) =>
+    d.status === 'downloading' || d.status === 'connecting' || d.status === 'pausing' || d.status === 'paused' || d.status === 'complete'
+  )
+  const comfyActiveCount = comfyEntries.filter(([, d]) => d.status === 'downloading' || d.status === 'connecting').length
+
+  // Group comfyUI downloads by bundle name
+  const comfyBundles = new Map<string, { id: string; d: typeof comfyDownloads[string] }[]>()
+  for (const [id, d] of comfyEntries) {
+    const bundleName = bundleMap[id] || id // Ungrouped files show as individual
+    if (!comfyBundles.has(bundleName)) comfyBundles.set(bundleName, [])
+    comfyBundles.get(bundleName)!.push({ id, d })
+  }
+
+  const totalActive = textActiveCount + comfyActiveCount
+  const hasAny = textEntries.length > 0 || comfyEntries.length > 0
 
   // Click outside to close
   useEffect(() => {
@@ -32,8 +52,8 @@ export function DownloadBadge() {
 
   // Auto-open when a new download starts
   useEffect(() => {
-    if (activeCount > 0) setOpen(true)
-  }, [activeCount])
+    if (totalActive > 0) setOpen(true)
+  }, [totalActive])
 
   return (
     <div ref={ref} className="relative">
@@ -49,14 +69,14 @@ export function DownloadBadge() {
       >
         <ArrowDownToLine size={14} />
         {/* Badge */}
-        {activeCount > 0 && (
+        {totalActive > 0 && (
           <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] flex items-center justify-center rounded-full bg-blue-500 text-[0.5rem] font-bold text-white leading-none px-0.5">
-            {activeCount}
+            {totalActive}
             <span className="absolute inset-0 rounded-full bg-blue-500 animate-ping opacity-40" />
           </span>
         )}
-        {/* Paused indicator (yellow dot, no ping) */}
-        {activeCount === 0 && entries.some(([, s]) => s.paused) && (
+        {/* Paused indicator */}
+        {totalActive === 0 && (textEntries.some(([, s]) => s.paused) || comfyEntries.some(([, d]) => d.status === 'paused')) && (
           <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-yellow-500" />
         )}
       </button>
@@ -74,11 +94,14 @@ export function DownloadBadge() {
             {/* Header */}
             <div className="flex items-center justify-between px-3 pt-2.5 pb-1">
               <span className="text-[0.65rem] font-semibold uppercase tracking-widest text-gray-500">
-                Downloads {hasAny && `(${entries.length})`}
+                Downloads {hasAny && `(${textEntries.length + comfyEntries.length})`}
               </span>
-              {entries.some(([, s]) => s.complete) && (
+              {(textEntries.some(([, s]) => s.complete) || comfyEntries.some(([, d]) => d.status === 'complete')) && (
                 <button
-                  onClick={() => entries.filter(([, s]) => s.complete).forEach(([n]) => dismissPull(n))}
+                  onClick={() => {
+                    textEntries.filter(([, s]) => s.complete).forEach(([n]) => dismissPull(n))
+                    comfyEntries.filter(([, d]) => d.status === 'complete').forEach(([id]) => useDownloadStore.getState().dismiss(id))
+                  }}
                   className="text-[0.6rem] text-gray-500 hover:text-gray-300 transition-colors"
                 >
                   Clear completed
@@ -88,59 +111,33 @@ export function DownloadBadge() {
 
             {/* Download list */}
             <div className="max-h-[300px] overflow-y-auto">
-              {entries.length === 0 && (
+              {!hasAny && (
                 <p className="text-center text-[0.7rem] text-gray-500 py-6">No active downloads</p>
               )}
 
-              {entries.map(([name, state]) => {
+              {/* Text model downloads (Ollama) */}
+              {textEntries.map(([name, state]) => {
                 const prog = state.progress.total && state.progress.completed
                   ? (state.progress.completed / state.progress.total) * 100 : 0
 
                 return (
                   <div key={name} className="px-3 py-2 border-t border-gray-100 dark:border-white/[0.04] first:border-t-0">
-                    {/* Top row: name + controls */}
                     <div className="flex items-center justify-between gap-2 mb-1">
                       <p className="text-[0.7rem] font-mono text-gray-700 dark:text-gray-300 truncate">{name}</p>
                       <div className="flex items-center gap-0.5 shrink-0">
-                        {/* Pause */}
                         {!state.complete && !state.paused && (
-                          <button
-                            onClick={() => pausePull(name)}
-                            className="p-0.5 rounded hover:bg-yellow-500/20 text-gray-400 hover:text-yellow-400 transition-colors"
-                            title="Pause"
-                          >
-                            <Pause size={11} />
-                          </button>
+                          <button onClick={() => pausePull(name)} className="p-0.5 rounded hover:bg-yellow-500/20 text-gray-400 hover:text-yellow-400 transition-colors" title="Pause"><Pause size={11} /></button>
                         )}
-                        {/* Resume */}
                         {state.paused && (
-                          <button
-                            onClick={() => pullModel(name)}
-                            className="p-0.5 rounded hover:bg-green-500/20 text-gray-400 hover:text-green-400 transition-colors"
-                            title="Resume"
-                          >
-                            <Play size={11} />
-                          </button>
+                          <button onClick={() => pullModel(name)} className="p-0.5 rounded hover:bg-green-500/20 text-gray-400 hover:text-green-400 transition-colors" title="Resume"><Play size={11} /></button>
                         )}
-                        {/* Dismiss */}
-                        <button
-                          onClick={() => dismissPull(name)}
-                          className="p-0.5 rounded hover:bg-white/10 text-gray-500 hover:text-gray-300 transition-colors"
-                          title="Dismiss"
-                        >
-                          <X size={11} />
-                        </button>
+                        <button onClick={() => dismissPull(name)} className="p-0.5 rounded hover:bg-white/10 text-gray-500 hover:text-gray-300 transition-colors" title="Dismiss"><X size={11} /></button>
                       </div>
                     </div>
-
-                    {/* Status */}
                     {state.complete ? (
-                      <div className="flex items-center gap-1.5 text-green-400">
-                        <CheckCircle size={11} />
-                        <span className="text-[0.65rem]">Complete</span>
-                      </div>
+                      <div className="flex items-center gap-1.5 text-green-400"><CheckCircle size={11} /><span className="text-[0.65rem]">Complete</span></div>
                     ) : state.paused ? (
-                      <span className="text-[0.65rem] text-yellow-400">Paused — click ▶ to resume</span>
+                      <span className="text-[0.65rem] text-yellow-400">Paused</span>
                     ) : (
                       <>
                         <p className="text-[0.6rem] text-gray-500 mb-1 truncate">{state.progress.status}</p>
@@ -152,6 +149,59 @@ export function DownloadBadge() {
                               {prog > 0 && <span className="ml-1.5 text-blue-400">{Math.round(prog)}%</span>}
                             </p>
                           </>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )
+              })}
+
+              {/* ComfyUI downloads (image/video models) — grouped by bundle */}
+              {Array.from(comfyBundles.entries()).map(([bundleName, files]) => {
+                const allComplete = files.every(f => f.d.status === 'complete')
+                const totalBytes = files.reduce((s, f) => s + f.d.total, 0)
+                const doneBytes = files.reduce((s, f) => s + f.d.progress, 0)
+                const bundleProg = totalBytes > 0 ? (doneBytes / totalBytes) * 100 : 0
+                const isBundle = files.length > 1
+
+                return (
+                  <div key={bundleName} className="px-3 py-2 border-t border-gray-100 dark:border-white/[0.04] first:border-t-0">
+                    {/* Bundle header */}
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <p className={`${isBundle ? 'text-[0.7rem] font-medium' : 'text-[0.7rem] font-mono'} text-gray-700 dark:text-gray-300 truncate`}>{bundleName}</p>
+                      <div className="flex items-center gap-0.5 shrink-0">
+                        {allComplete ? (
+                          <button onClick={() => files.forEach(f => useDownloadStore.getState().dismiss(f.id))} className="p-0.5 rounded hover:bg-white/10 text-gray-500 hover:text-gray-300 transition-colors" title="Dismiss"><X size={11} /></button>
+                        ) : (
+                          <button onClick={() => files.forEach(f => useDownloadStore.getState().cancel(f.id))} className="p-0.5 rounded hover:bg-white/10 text-gray-500 hover:text-gray-300 transition-colors" title="Cancel all"><X size={11} /></button>
+                        )}
+                      </div>
+                    </div>
+
+                    {allComplete ? (
+                      <div className="flex items-center gap-1.5 text-green-400"><CheckCircle size={11} /><span className="text-[0.65rem]">Complete ({files.length} files)</span></div>
+                    ) : (
+                      <>
+                        {totalBytes > 0 && <ProgressBar progress={bundleProg} />}
+                        <p className="text-[0.55rem] text-gray-500 mt-0.5">
+                          {totalBytes > 0 ? `${formatBytes(doneBytes)} / ${formatBytes(totalBytes)}` : 'Starting...'}
+                          {bundleProg > 0 && <span className="ml-1.5 text-blue-400">{Math.round(bundleProg)}%</span>}
+                        </p>
+                        {/* Individual file rows */}
+                        {isBundle && (
+                          <div className="mt-1.5 space-y-0.5">
+                            {files.map(({ id, d }) => (
+                              <div key={id} className="flex items-center justify-between text-[0.55rem] text-gray-500">
+                                <span className="truncate flex-1 font-mono">{d.filename || id}</span>
+                                <span className="shrink-0 ml-2">
+                                  {d.status === 'complete' ? <span className="text-green-400">Done</span>
+                                    : d.status === 'paused' ? <span className="text-yellow-400">Paused</span>
+                                    : d.total > 0 ? `${Math.round((d.progress / d.total) * 100)}%`
+                                    : d.status === 'connecting' ? 'Connecting' : '...'}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
                         )}
                       </>
                     )}

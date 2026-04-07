@@ -63,6 +63,8 @@ export async function preflightCheck(
   }
 
   const needsUnet = modelType === 'flux' || modelType === 'flux2' || modelType === 'wan' || modelType === 'hunyuan'
+    || modelType === 'ltx' || modelType === 'mochi' || modelType === 'cosmos' || modelType === 'cogvideo'
+    || modelType === 'framepack' || modelType === 'pyramidflow' || modelType === 'allegro'
   if (needsUnet) {
     const hasUNET = nodes.loaders.includes('UNETLoader')
     const hasCLIPLoader = nodes.loaders.includes('CLIPLoader')

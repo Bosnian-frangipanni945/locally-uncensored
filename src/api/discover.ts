@@ -1,4 +1,5 @@
 import { backendCall, fetchExternal } from "./backend"
+import type { ProviderId } from "./providers/types"
 
 export interface DiscoverModel {
   name: string
@@ -15,6 +16,11 @@ export interface DiscoverModel {
   // Discovery flags
   hot?: boolean       // Featured/trending model
   agent?: boolean     // Supports Agent Mode tool calling
+  released?: string   // Release date YYYY-MM for sorting (newest first)
+  // Multi-provider
+  provider?: ProviderId   // Which provider this model belongs to
+  providerName?: string   // Display name of the provider
+  canPull?: boolean       // false = no download/pull capability (cloud/external)
 }
 
 export interface DownloadProgress {
@@ -52,6 +58,51 @@ export async function resumeDownload(id: string, url: string, subfolder: string)
   await backendCall("resume_download", { id, url, subfolder })
 }
 
+// ─── Custom Node Installation ───
+
+export async function installCustomNodes(nodeKeys: string[]): Promise<void> {
+  for (const key of nodeKeys) {
+    const entry = CUSTOM_NODE_REGISTRY[key]
+    if (!entry) {
+      console.warn(`[discover] Unknown custom node key: ${key}`)
+      continue
+    }
+    try {
+      await backendCall('install_custom_node', { repo_url: entry.repo, node_name: entry.name })
+      console.log(`[discover] Installed custom node: ${entry.name}`)
+    } catch (err) {
+      console.error(`[discover] Failed to install ${entry.name}:`, err)
+      throw new Error(`Failed to install ${entry.name}: ${err}`)
+    }
+  }
+}
+
+export async function installBundleComplete(bundle: ModelBundle): Promise<void> {
+  // Step 1: Install custom nodes if needed
+  if (bundle.customNodes && bundle.customNodes.length > 0) {
+    await installCustomNodes(bundle.customNodes)
+  }
+
+  // Step 2: Download all model files
+  for (const file of bundle.files) {
+    if (file.downloadUrl && file.filename && file.subfolder) {
+      await startModelDownload(file.downloadUrl, file.subfolder, file.filename)
+    }
+  }
+
+  // Step 3: Restart ComfyUI if custom nodes were installed (needed for node registration)
+  if (bundle.customNodes && bundle.customNodes.length > 0) {
+    try {
+      await backendCall('stop_comfyui')
+      // Small delay before restart
+      await new Promise(resolve => setTimeout(resolve, 2000))
+      await backendCall('start_comfyui')
+    } catch (err) {
+      console.warn('[discover] ComfyUI restart after custom node install failed:', err)
+    }
+  }
+}
+
 // ─── Component Registry: What each model type needs to work ───
 
 import type { ModelType } from './comfyui'
@@ -72,58 +123,71 @@ export interface ComponentRequirements {
   needsSeparateCLIP: boolean
 }
 
-export const COMPONENT_REGISTRY: Record<ModelType, ComponentRequirements> = {
-  sd15: {
-    loader: 'CheckpointLoaderSimple',
-    needsSeparateVAE: false,
-    needsSeparateCLIP: false,
-  },
-  sdxl: {
-    loader: 'CheckpointLoaderSimple',
-    needsSeparateVAE: false,
-    needsSeparateCLIP: false,
-  },
+export const COMPONENT_REGISTRY: Record<string, ComponentRequirements> = {
+  sd15: { loader: 'CheckpointLoaderSimple', needsSeparateVAE: false, needsSeparateCLIP: false },
+  sdxl: { loader: 'CheckpointLoaderSimple', needsSeparateVAE: false, needsSeparateCLIP: false },
   flux: {
     loader: 'UNETLoader',
     vae: { patterns: ['ae', 'flux'], downloadName: 'flux2-vae.safetensors', downloadUrl: 'https://huggingface.co/Comfy-Org/vae-text-encorder-for-flux-klein-4b/resolve/main/split_files/vae/flux2-vae.safetensors', subfolder: 'vae' },
     clip: { patterns: ['t5xxl', 't5-xxl', 't5_xxl'], downloadName: 't5xxl_fp8_e4m3fn.safetensors', downloadUrl: 'https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp8_e4m3fn.safetensors', subfolder: 'text_encoders' },
     clipSecondary: { patterns: ['clip_l'], downloadName: 'clip_l.safetensors', downloadUrl: 'https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/clip_l.safetensors', subfolder: 'text_encoders' },
-    needsSeparateVAE: true,
-    needsSeparateCLIP: true,
+    needsSeparateVAE: true, needsSeparateCLIP: true,
   },
   flux2: {
     loader: 'UNETLoader',
     vae: { patterns: ['flux2', 'flux'], downloadName: 'flux2-vae.safetensors', downloadUrl: 'https://huggingface.co/Comfy-Org/vae-text-encorder-for-flux-klein-4b/resolve/main/split_files/vae/flux2-vae.safetensors', subfolder: 'vae' },
     clip: { patterns: ['qwen', 'mistral'], downloadName: 'qwen_3_4b_fp4_flux2.safetensors', downloadUrl: 'https://huggingface.co/Comfy-Org/vae-text-encorder-for-flux-klein-4b/resolve/main/split_files/text_encoders/qwen_3_4b_fp4_flux2.safetensors', subfolder: 'text_encoders' },
-    needsSeparateVAE: true,
-    needsSeparateCLIP: true,
+    needsSeparateVAE: true, needsSeparateCLIP: true,
   },
   wan: {
     loader: 'UNETLoader',
     vae: { patterns: ['wan'], downloadName: 'wan_2.1_vae.safetensors', downloadUrl: 'https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/vae/wan_2.1_vae.safetensors', subfolder: 'vae' },
     clip: { patterns: ['umt5', 'wan'], downloadName: 'umt5_xxl_fp8_e4m3fn_scaled.safetensors', downloadUrl: 'https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors', subfolder: 'text_encoders' },
-    needsSeparateVAE: true,
-    needsSeparateCLIP: true,
+    needsSeparateVAE: true, needsSeparateCLIP: true,
   },
   hunyuan: {
     loader: 'UNETLoader',
     vae: { patterns: ['hunyuanvideo', 'hunyuan'], downloadName: 'hunyuanvideo15_vae_fp16.safetensors', downloadUrl: 'https://huggingface.co/Comfy-Org/HunyuanVideo_1.5_repackaged/resolve/main/split_files/vae/hunyuanvideo15_vae_fp16.safetensors', subfolder: 'vae' },
     clip: { patterns: ['qwen', 'llava'], downloadName: 'qwen_2.5_vl_7b_fp8_scaled.safetensors', downloadUrl: 'https://huggingface.co/Comfy-Org/HunyuanVideo_1.5_repackaged/resolve/main/split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors', subfolder: 'text_encoders' },
-    needsSeparateVAE: true,
-    needsSeparateCLIP: true,
+    needsSeparateVAE: true, needsSeparateCLIP: true,
   },
   ltx: {
     loader: 'UNETLoader',
-    vae: { patterns: ['ltx'], downloadName: 'ltx_vae.safetensors', downloadUrl: '', subfolder: 'vae' },
     clip: { patterns: ['gemma'], downloadName: 'gemma_3_12B_it_fp8_scaled.safetensors', downloadUrl: 'https://huggingface.co/Comfy-Org/ltx-2/resolve/main/split_files/text_encoders/gemma_3_12B_it_fp8_scaled.safetensors', subfolder: 'text_encoders' },
-    needsSeparateVAE: false, // LTX has VAE built into the model pipeline
-    needsSeparateCLIP: true,
+    needsSeparateVAE: false, needsSeparateCLIP: true,
   },
-  unknown: {
-    loader: 'CheckpointLoaderSimple',
-    needsSeparateVAE: false,
-    needsSeparateCLIP: false,
+  mochi: {
+    loader: 'UNETLoader',
+    vae: { patterns: ['mochi'], downloadName: 'mochi_vae.safetensors', downloadUrl: 'https://huggingface.co/Comfy-Org/mochi_preview_repackaged/resolve/main/split_files/vae/mochi_vae.safetensors', subfolder: 'vae' },
+    clip: { patterns: ['t5'], downloadName: 't5xxl_fp16.safetensors', downloadUrl: 'https://huggingface.co/Kijai/CogVideoX_comfy/resolve/main/t5xxl_fp16.safetensors', subfolder: 'text_encoders' },
+    needsSeparateVAE: true, needsSeparateCLIP: true,
   },
+  cosmos: {
+    loader: 'UNETLoader',
+    vae: { patterns: ['cosmos'], downloadName: 'cosmos_cv8x8x8_1.0.safetensors', downloadUrl: 'https://huggingface.co/comfyanonymous/cosmos_1.0_text2world_safetensors/resolve/main/cosmos_cv8x8x8_1.0.safetensors', subfolder: 'vae' },
+    clip: { patterns: ['oldt5'], downloadName: 'oldt5_xxl_fp8_e4m3fn_scaled.safetensors', downloadUrl: 'https://huggingface.co/comfyanonymous/cosmos_1.0_text2world_safetensors/resolve/main/oldt5_xxl_fp8_e4m3fn_scaled.safetensors', subfolder: 'text_encoders' },
+    needsSeparateVAE: true, needsSeparateCLIP: true,
+  },
+  cogvideo: {
+    loader: 'UNETLoader',
+    vae: { patterns: ['cogvideox', 'cogvideo'], downloadName: 'cogvideox_vae.safetensors', downloadUrl: 'https://huggingface.co/Kijai/CogVideoX_comfy/resolve/main/cogvideox_vae.safetensors', subfolder: 'vae' },
+    clip: { patterns: ['t5'], downloadName: 't5xxl_fp16.safetensors', downloadUrl: 'https://huggingface.co/Kijai/CogVideoX_comfy/resolve/main/t5xxl_fp16.safetensors', subfolder: 'text_encoders' },
+    needsSeparateVAE: true, needsSeparateCLIP: true,
+  },
+  svd: { loader: 'CheckpointLoaderSimple', needsSeparateVAE: false, needsSeparateCLIP: false },
+  framepack: {
+    loader: 'UNETLoader',
+    vae: { patterns: ['hunyuan', 'wan'], downloadName: 'hunyuanvideo15_vae_fp16.safetensors', downloadUrl: 'https://huggingface.co/Comfy-Org/HunyuanVideo_1.5_repackaged/resolve/main/split_files/vae/hunyuanvideo15_vae_fp16.safetensors', subfolder: 'vae' },
+    clip: { patterns: ['llava', 'qwen'], downloadName: 'llava_llama3_fp8_scaled.safetensors', downloadUrl: 'https://huggingface.co/Comfy-Org/HunyuanVideo_repackaged/resolve/main/split_files/text_encoders/llava_llama3_fp8_scaled.safetensors', subfolder: 'text_encoders' },
+    needsSeparateVAE: true, needsSeparateCLIP: true,
+  },
+  pyramidflow: {
+    loader: 'UNETLoader',
+    vae: { patterns: ['pyramid'], downloadName: 'pyramid_flow_vae.safetensors', downloadUrl: 'https://huggingface.co/Kijai/pyramid-flow-comfy/resolve/main/pyramid_flow_vae.safetensors', subfolder: 'vae' },
+    needsSeparateVAE: true, needsSeparateCLIP: false,
+  },
+  allegro: { loader: 'UNETLoader', needsSeparateVAE: false, needsSeparateCLIP: false },
+  unknown: { loader: 'CheckpointLoaderSimple', needsSeparateVAE: false, needsSeparateCLIP: false },
 }
 
 // ─── Ollama Text Models ───
@@ -205,47 +269,224 @@ function parseOllamaSearchHTML(html: string): DiscoverModel[] {
   return models
 }
 
+/** Sort models by release date, newest first */
+function sortByRelease(models: DiscoverModel[]): DiscoverModel[] {
+  return models.sort((a, b) => (b.released ?? '').localeCompare(a.released ?? ''))
+}
+
 /** Uncensored / abliterated models — the core of LU */
 export function getUncensoredTextModels(): DiscoverModel[] {
-  return [
+  return sortByRelease([
     // ── HOT: Agent Mode + Uncensored ──
-    { name: 'hermes3', description: 'NousResearch Hermes 3 — uncensored + native tool calling. THE agent model.', pulls: '500K+', tags: ['3B', '8B', '70B', '405B'], updated: 'Hot', hot: true, agent: true },
-    { name: 'dolphin3', description: 'Dolphin 3 — uncensored from training. Coding, math, general purpose.', pulls: '3.7M', tags: ['8B'], updated: 'Hot', hot: true },
-    { name: 'huihui_ai/qwen3.5-abliterated', description: 'Qwen 3.5 abliterated — newest, strongest reasoning + coding.', pulls: '10K+', tags: ['9B', '27B', '35B'], updated: 'Hot', hot: true },
-    { name: 'huihui_ai/gpt-oss-abliterated', description: 'OpenAI GPT-OSS — abliterated open-source GPT model.', pulls: '15K+', tags: ['20B', '120B'], updated: 'Hot', hot: true },
-    { name: 'huihui_ai/qwen3-coder-abliterated', description: 'Qwen3-Coder abliterated — 30B MoE (3B active), built for code agents. 256K context.', pulls: '5K+', tags: ['30B', '480B'], updated: 'Hot', hot: true, agent: true },
+    { name: 'hermes3', description: 'NousResearch Hermes 3 — uncensored + native tool calling. THE agent model.', pulls: '500K+', tags: ['3B', '8B', '70B', '405B'], updated: 'Hot', hot: true, agent: true, released: '2024-08' },
+    { name: 'dolphin3', description: 'Dolphin 3 — uncensored from training. Coding, math, general purpose.', pulls: '3.7M', tags: ['8B'], updated: 'Hot', hot: true, released: '2024-12' },
+    { name: 'huihui_ai/qwen3.5-abliterated', description: 'Qwen 3.5 abliterated — newest, strongest reasoning + coding.', pulls: '10K+', tags: ['9B', '27B', '35B'], updated: 'Hot', hot: true, released: '2026-03' },
+    { name: 'huihui_ai/gpt-oss-abliterated', description: 'OpenAI GPT-OSS — abliterated open-source GPT model.', pulls: '15K+', tags: ['20B', '120B'], updated: 'Hot', hot: true, released: '2026-03' },
+    { name: 'huihui_ai/qwen3-coder-abliterated', description: 'Qwen3-Coder abliterated — 30B MoE (3B active), built for code agents. 256K context.', pulls: '5K+', tags: ['30B', '480B'], updated: 'Hot', hot: true, agent: true, released: '2026-02' },
+    { name: 'aratan/gemma-4-31B-it-uncensores', description: 'Gemma 4 31B uncensored — frontier dense model, native tool calling + vision. 256K context.', pulls: '400+', tags: ['31B'], updated: 'Hot', hot: true, agent: true, released: '2026-04' },
+    { name: 'juilpark/gemma-4-26B-A4B-it-heretic', description: 'Gemma 4 26B MoE HERETIC — 26B brain, 4B active. Uncensored + tools + vision.', pulls: '30+', tags: ['26B'], updated: 'Hot', hot: true, agent: true, released: '2026-04' },
+    { name: 'juilpark/gemma-4-31B-it-uncensored-heretic', description: 'Gemma 4 31B HERETIC — full uncensor, native tool calling, 256K context.', pulls: '80+', tags: ['31B'], updated: 'Hot', hot: true, agent: true, released: '2026-04' },
+    { name: 'charaf/gemma4-31b-claude-opus-abliterated', description: 'Gemma 4 31B abliterated — Claude Opus-style tuning, strong reasoning.', pulls: '360+', tags: ['31B'], updated: 'New', hot: true, agent: true, released: '2026-04' },
     // ── Popular Uncensored ──
-    { name: 'huihui_ai/qwen3-abliterated', description: 'Qwen3 abliterated — best overall. Exceptional reasoning, coding, multilingual.', pulls: '30K+', tags: ['8B', '30B'], updated: 'Popular' },
-    { name: 'mannix/llama3.1-8b-abliterated', description: 'Llama 3.1 8B — fast, reliable, great entry point.', pulls: '200K+', tags: ['Q5_K_M', 'Q4_K_M'], updated: 'Popular' },
-    { name: 'huihui_ai/deepseek-r1-abliterated', description: 'DeepSeek R1 — chain-of-thought reasoning. Scales to your hardware.', pulls: '40K+', tags: ['8B', '14B', '32B', '70B'], updated: 'Popular' },
-    { name: 'huihui_ai/glm4.6-abliterated', description: 'GLM 4.6 abliterated — newest model, strong coding and reasoning.', pulls: '5K+', tags: ['357B'], updated: 'New' },
-    { name: 'huihui_ai/gemma3-abliterated', description: 'Google Gemma 3 — vision support, great quality.', pulls: '20K+', tags: ['4B', '12B', '27B'], updated: 'Popular' },
-    { name: 'richardyoung/qwen3-14b-abliterated', description: 'Qwen3 14B — sweet spot of speed and intelligence.', pulls: '4K+', tags: ['Q4_K_M', 'Q5_K_M'], updated: 'Recent' },
-    { name: 'huihui_ai/qwen2.5-abliterate', description: 'Qwen 2.5 abliterated series — proven and reliable.', pulls: '50K+', tags: ['7B', '14B', '32B'], updated: 'Popular' },
-    { name: 'huihui_ai/llama3.3-abliterated', description: 'Llama 3.3 70B — maximum intelligence for high-VRAM setups.', pulls: '15K+', tags: ['70B'], updated: 'Popular' },
-    { name: 'huihui_ai/mistral-small-abliterated', description: 'Mistral Small 24B — powerful, strong multilingual.', pulls: '10K+', tags: ['24B'], updated: 'Recent' },
-    { name: 'huihui_ai/phi4-abliterated', description: 'Microsoft Phi-4 — excellent at math, logic, structured tasks.', pulls: '8K+', tags: ['14B'], updated: 'Recent' },
-    { name: 'krith/mistral-nemo-instruct-2407-abliterated', description: 'Mistral Nemo 12B — multilingual powerhouse.', pulls: '5K+', tags: ['IQ4_XS', 'IQ3_M'], updated: 'Popular' },
-  ]
+    { name: 'huihui_ai/qwen3-abliterated', description: 'Qwen3 abliterated — best overall. Exceptional reasoning, coding, multilingual.', pulls: '30K+', tags: ['8B', '30B'], updated: 'Popular', released: '2025-05' },
+    { name: 'mannix/llama3.1-8b-abliterated', description: 'Llama 3.1 8B — fast, reliable, great entry point.', pulls: '200K+', tags: ['Q5_K_M', 'Q4_K_M'], updated: 'Popular', released: '2024-07' },
+    { name: 'huihui_ai/deepseek-r1-abliterated', description: 'DeepSeek R1 — chain-of-thought reasoning. Scales to your hardware.', pulls: '40K+', tags: ['8B', '14B', '32B', '70B'], updated: 'Popular', released: '2025-01' },
+    { name: 'huihui_ai/glm4.6-abliterated', description: 'GLM 4.6 abliterated — newest model, strong coding and reasoning.', pulls: '5K+', tags: ['357B'], updated: 'New', released: '2026-03' },
+    { name: 'kiwi_kiwi/gemma-4-uncensores', description: 'Gemma 4 31B uncensored — strong all-rounder, vision + tool calling.', pulls: '400+', tags: ['31B'], updated: 'New', agent: true, released: '2026-04' },
+    { name: 'huihui_ai/gemma3-abliterated', description: 'Google Gemma 3 — vision support, great quality.', pulls: '20K+', tags: ['4B', '12B', '27B'], updated: 'Popular', released: '2025-03' },
+    { name: 'richardyoung/qwen3-14b-abliterated', description: 'Qwen3 14B — sweet spot of speed and intelligence.', pulls: '4K+', tags: ['Q4_K_M', 'Q5_K_M'], updated: 'Recent', released: '2025-05' },
+    { name: 'huihui_ai/qwen2.5-abliterate', description: 'Qwen 2.5 abliterated series — proven and reliable.', pulls: '50K+', tags: ['7B', '14B', '32B'], updated: 'Popular', released: '2024-09' },
+    { name: 'huihui_ai/llama3.3-abliterated', description: 'Llama 3.3 70B — maximum intelligence for high-VRAM setups.', pulls: '15K+', tags: ['70B'], updated: 'Popular', released: '2024-12' },
+    { name: 'huihui_ai/mistral-small-abliterated', description: 'Mistral Small 24B — powerful, strong multilingual.', pulls: '10K+', tags: ['24B'], updated: 'Recent', released: '2024-09' },
+    { name: 'huihui_ai/phi4-abliterated', description: 'Microsoft Phi-4 — excellent at math, logic, structured tasks.', pulls: '8K+', tags: ['14B'], updated: 'Recent', released: '2024-12' },
+    { name: 'krith/mistral-nemo-instruct-2407-abliterated', description: 'Mistral Nemo 12B — multilingual powerhouse.', pulls: '5K+', tags: ['IQ4_XS', 'IQ3_M'], updated: 'Popular', released: '2024-07' },
+  ])
 }
 
 /** Mainstream models — not uncensored but excellent for specific tasks */
 export function getMainstreamTextModels(): DiscoverModel[] {
-  return [
-    { name: 'gemma4', description: 'Google Gemma 4 — native tool calling + vision. 128-256K context. Apache 2.0.', pulls: '100K+', tags: ['e2b', 'e4b', '26B', '31B'], updated: 'New', hot: true, agent: true },
-    { name: 'qwen3-coder', description: 'Qwen3-Coder — 30B MoE coding agent (3B active). Native tool calling, 256K context.', pulls: '100K+', tags: ['30B', '480B'], updated: 'New', hot: true, agent: true },
-    { name: 'qwen3-coder-next', description: 'Qwen3-Coder-Next — 80B MoE (3B active). Optimized for agentic coding workflows.', pulls: '10K+', tags: ['Q4_K_M', 'Q8_0'], updated: 'New', hot: true, agent: true },
-    { name: 'qwen3', description: 'Qwen 3 — top-tier reasoning and coding. Thinking mode support.', pulls: '5M+', tags: ['8B', '14B', '32B'], updated: 'Popular', agent: true },
-    { name: 'llama4', description: 'Meta Llama 4 — latest generation MoE. Needs 64GB+ RAM.', pulls: '1M+', tags: ['scout', 'maverick'], updated: 'New', agent: true },
-    { name: 'deepseek-r1', description: 'DeepSeek R1 — chain-of-thought reasoning model. Shows its thinking.', pulls: '2M+', tags: ['8B', '14B', '32B', '70B'], updated: 'Popular' },
-    { name: 'phi4', description: 'Microsoft Phi 4 — excellent math, logic, structured tasks.', pulls: '500K+', tags: ['14B'], updated: 'Popular', agent: true },
-    { name: 'mistral-small', description: 'Mistral Small — fast, multilingual, native tool calling.', pulls: '300K+', tags: ['24B'], updated: 'Popular', agent: true },
-  ]
+  return sortByRelease([
+    { name: 'gemma4', description: 'Google Gemma 4 — native tool calling + vision. 128-256K context. Apache 2.0.', pulls: '100K+', tags: ['e2b', 'e4b', '26B', '31B'], updated: 'New', hot: true, agent: true, released: '2026-04' },
+    { name: 'qwen3-coder', description: 'Qwen3-Coder — 30B MoE coding agent (3B active). Native tool calling, 256K context.', pulls: '100K+', tags: ['30B', '480B'], updated: 'New', hot: true, agent: true, released: '2026-02' },
+    { name: 'qwen3-coder-next', description: 'Qwen3-Coder-Next — 80B MoE (3B active). Optimized for agentic coding workflows.', pulls: '10K+', tags: ['Q4_K_M', 'Q8_0'], updated: 'New', hot: true, agent: true, released: '2026-03' },
+    { name: 'qwen3', description: 'Qwen 3 — top-tier reasoning and coding. Thinking mode support.', pulls: '5M+', tags: ['8B', '14B', '32B'], updated: 'Popular', agent: true, released: '2025-05' },
+    { name: 'llama4', description: 'Meta Llama 4 — latest generation MoE. Needs 64GB+ RAM.', pulls: '1M+', tags: ['scout', 'maverick'], updated: 'New', agent: true, released: '2025-04' },
+    { name: 'deepseek-r1', description: 'DeepSeek R1 — chain-of-thought reasoning model. Shows its thinking.', pulls: '2M+', tags: ['8B', '14B', '32B', '70B'], updated: 'Popular', released: '2025-01' },
+    { name: 'phi4', description: 'Microsoft Phi 4 — excellent math, logic, structured tasks.', pulls: '500K+', tags: ['14B'], updated: 'Popular', agent: true, released: '2024-12' },
+    { name: 'mistral-small', description: 'Mistral Small — fast, multilingual, native tool calling.', pulls: '300K+', tags: ['24B'], updated: 'Popular', agent: true, released: '2024-09' },
+  ])
 }
 
 /** Combined curated list for search fallback — uncensored first */
 function getCuratedTextModels(): DiscoverModel[] {
   return [...getUncensoredTextModels(), ...getMainstreamTextModels()]
+}
+
+// ─── Multi-Provider Discovery ───
+
+/** Fetch models from an OpenAI-compatible provider */
+export async function getOpenAIProviderModels(providerName: string): Promise<DiscoverModel[]> {
+  try {
+    const { getProvider } = await import('./providers/registry')
+    const provider = getProvider('openai')
+    const models = await provider.listModels()
+    return models.map(m => ({
+      name: m.id,
+      description: m.name !== m.id ? m.name : '',
+      pulls: '',
+      tags: m.contextLength ? [`${Math.round(m.contextLength / 1024)}K ctx`] : [],
+      updated: '',
+      provider: 'openai' as ProviderId,
+      providerName,
+      canPull: false,
+      agent: m.supportsTools,
+    }))
+  } catch {
+    return []
+  }
+}
+
+/** Fetch Anthropic Claude models */
+export async function getAnthropicModels(): Promise<DiscoverModel[]> {
+  try {
+    const { getProvider } = await import('./providers/registry')
+    const provider = getProvider('anthropic')
+    const models = await provider.listModels()
+    return models.map(m => ({
+      name: m.id,
+      description: m.name,
+      pulls: '',
+      tags: [
+        m.contextLength ? `${Math.round(m.contextLength / 1000)}K ctx` : '',
+        m.supportsTools ? 'Tools' : '',
+        m.supportsVision ? 'Vision' : '',
+      ].filter(Boolean),
+      updated: '',
+      provider: 'anthropic' as ProviderId,
+      providerName: 'Anthropic',
+      canPull: false,
+      agent: m.supportsTools,
+    }))
+  } catch {
+    return []
+  }
+}
+
+// ─── HuggingFace GGUF Discovery ───
+
+const HF = (repo: string, file: string) => `https://huggingface.co/${repo}/resolve/main/${file}`
+
+/** Uncensored GGUF models from HuggingFace */
+export function getHuggingFaceUncensoredModels(): DiscoverModel[] {
+  return sortByRelease([
+    { name: 'Hermes 3 Llama 3.1 8B', description: 'NousResearch Hermes 3 — uncensored + native tool calling. THE agent model.', tags: ['8B', 'Q4_K_M', '5 GB'], updated: 'Hot', hot: true, agent: true, released: '2024-08', downloadUrl: HF('bartowski/Hermes-3-Llama-3.1-8B-GGUF', 'Hermes-3-Llama-3.1-8B-Q4_K_M.gguf'), filename: 'Hermes-3-Llama-3.1-8B-Q4_K_M.gguf', sizeGB: 5 },
+    { name: 'Dolphin 3 Llama 3.1 8B', description: 'Dolphin 3 — uncensored from training. Coding, math, general purpose.', tags: ['8B', 'Q4_K_M', '5 GB'], updated: 'Hot', hot: true, released: '2024-12', downloadUrl: HF('bartowski/dolphin-2.9.4-llama3.1-8b-GGUF', 'dolphin-2.9.4-llama3.1-8b-Q4_K_M.gguf'), filename: 'dolphin-2.9.4-llama3.1-8b-Q4_K_M.gguf', sizeGB: 5 },
+  ])
+}
+
+/** Mainstream GGUF models from HuggingFace — all URLs verified */
+export function getHuggingFaceMainstreamModels(): DiscoverModel[] {
+  return sortByRelease([
+    // ── Gemma 4 (April 2026) ──
+    { name: 'Gemma 4 31B', description: 'Google Gemma 4 31B — frontier dense model, native tools + vision. 256K context.', tags: ['31B', 'Q4_K_M', '20 GB'], updated: 'Hot', hot: true, agent: true, released: '2026-04', downloadUrl: HF('unsloth/gemma-4-31B-it-GGUF', 'gemma-4-31B-it-Q4_K_M.gguf'), filename: 'gemma-4-31B-it-Q4_K_M.gguf', sizeGB: 20 },
+    { name: 'Gemma 4 26B MoE', description: 'Gemma 4 26B MoE — 26B brain, runs like 4B. Tools + vision. Apache 2.0.', tags: ['26B', 'Q4_K_XL', '18 GB'], updated: 'Hot', hot: true, agent: true, released: '2026-04', downloadUrl: HF('unsloth/gemma-4-26B-A4B-it-GGUF', 'gemma-4-26B-A4B-it-UD-Q4_K_XL.gguf'), filename: 'gemma-4-26B-A4B-it-UD-Q4_K_XL.gguf', sizeGB: 18 },
+    { name: 'Gemma 4 E4B', description: 'Gemma 4 E4B — lightweight 4.5B, great for small GPUs.', tags: ['4.5B', 'Q4_K_M', '5 GB'], updated: 'Hot', hot: true, released: '2026-04', downloadUrl: HF('unsloth/gemma-4-E4B-it-GGUF', 'gemma-4-E4B-it-Q4_K_M.gguf'), filename: 'gemma-4-E4B-it-Q4_K_M.gguf', sizeGB: 5 },
+    { name: 'Gemma 4 E2B', description: 'Gemma 4 E2B — ultra-light 2.3B, runs on anything.', tags: ['2.3B', 'Q4_K_M', '3 GB'], updated: 'New', released: '2026-04', downloadUrl: HF('unsloth/gemma-4-E2B-it-GGUF', 'gemma-4-E2B-it-Q4_K_M.gguf'), filename: 'gemma-4-E2B-it-Q4_K_M.gguf', sizeGB: 3 },
+    // ── Qwen 3.5 (March 2026) ──
+    { name: 'Qwen 3.5 35B MoE', description: 'Qwen 3.5 35B MoE — best agentic, 256K context. SWE-bench leader.', tags: ['35B', 'Q4_K_M', '22 GB'], updated: 'Hot', hot: true, agent: true, released: '2026-03', downloadUrl: HF('unsloth/Qwen3.5-35B-A3B-GGUF', 'Qwen3.5-35B-A3B-Q4_K_M.gguf'), filename: 'Qwen3.5-35B-A3B-Q4_K_M.gguf', sizeGB: 22 },
+    { name: 'Qwen 3.5 27B', description: 'Qwen 3.5 27B dense — strongest reasoning + coding.', tags: ['27B', 'Q4_K_M', '17 GB'], updated: 'Hot', hot: true, released: '2026-03', downloadUrl: HF('unsloth/Qwen3.5-27B-GGUF', 'Qwen3.5-27B-Q4_K_M.gguf'), filename: 'Qwen3.5-27B-Q4_K_M.gguf', sizeGB: 17 },
+    { name: 'Qwen 3.5 9B', description: 'Qwen 3.5 9B — excellent balance of speed and quality.', tags: ['9B', 'Q4_K_M', '6 GB'], updated: 'New', released: '2026-03', downloadUrl: HF('unsloth/Qwen3.5-9B-GGUF', 'Qwen3.5-9B-Q4_K_M.gguf'), filename: 'Qwen3.5-9B-Q4_K_M.gguf', sizeGB: 6 },
+    // ── GPT-OSS (March 2026) ──
+    { name: 'GPT-OSS 20B', description: 'OpenAI GPT-OSS — open-source GPT model, strong all-rounder.', tags: ['20B', 'Q4_K_M', '13 GB'], updated: 'Hot', hot: true, released: '2026-03', downloadUrl: HF('unsloth/gpt-oss-20b-GGUF', 'gpt-oss-20b-Q4_K_M.gguf'), filename: 'gpt-oss-20b-Q4_K_M.gguf', sizeGB: 13 },
+    // ── Qwen3-Coder (March 2026) ──
+    { name: 'Qwen3-Coder-Next', description: 'Qwen3-Coder-Next — 80B MoE, optimized for agentic coding.', tags: ['80B MoE', 'Q4_K_M', '25 GB'], updated: 'Hot', hot: true, agent: true, released: '2026-03', downloadUrl: HF('unsloth/Qwen3-Coder-Next-GGUF', 'Qwen3-Coder-Next-Q4_K_M.gguf'), filename: 'Qwen3-Coder-Next-Q4_K_M.gguf', sizeGB: 25 },
+    // ── DeepSeek (Jan-Jun 2025) ──
+    { name: 'DeepSeek R1 Qwen3 8B', description: 'DeepSeek R1 distilled into Qwen3 8B — chain-of-thought reasoning.', tags: ['8B', 'Q4_K_M', '5 GB'], updated: 'Popular', released: '2025-06', downloadUrl: HF('unsloth/DeepSeek-R1-0528-Qwen3-8B-GGUF', 'DeepSeek-R1-0528-Qwen3-8B-Q4_K_M.gguf'), filename: 'DeepSeek-R1-0528-Qwen3-8B-Q4_K_M.gguf', sizeGB: 5 },
+    { name: 'DeepSeek R1 Qwen 14B', description: 'DeepSeek R1 distilled into Qwen 14B — stronger reasoning.', tags: ['14B', 'Q4_K_M', '9 GB'], updated: 'Popular', released: '2025-01', downloadUrl: HF('unsloth/DeepSeek-R1-Distill-Qwen-14B-GGUF', 'DeepSeek-R1-Distill-Qwen-14B-Q4_K_M.gguf'), filename: 'DeepSeek-R1-Distill-Qwen-14B-Q4_K_M.gguf', sizeGB: 9 },
+    // ── Qwen 3 (May 2025) ──
+    { name: 'Qwen 3 8B', description: 'Qwen 3 8B — top-tier reasoning and coding. Thinking mode.', tags: ['8B', 'Q4_K_M', '5 GB'], updated: 'Popular', agent: true, released: '2025-05', downloadUrl: HF('unsloth/Qwen3-8B-GGUF', 'Qwen3-8B-Q4_K_M.gguf'), filename: 'Qwen3-8B-Q4_K_M.gguf', sizeGB: 5 },
+    { name: 'Qwen 3 4B', description: 'Qwen 3 4B — fast, lightweight, solid for small GPUs.', tags: ['4B', 'Q4_K_M', '3 GB'], updated: 'Popular', released: '2025-05', downloadUrl: HF('unsloth/Qwen3-4B-GGUF', 'Qwen3-4B-Q4_K_M.gguf'), filename: 'Qwen3-4B-Q4_K_M.gguf', sizeGB: 3 },
+    // ── Llama 4 (April 2025) ──
+    { name: 'Llama 4 Scout', description: 'Meta Llama 4 Scout — 16x17B MoE. Massive context window.', tags: ['Scout', 'Q2_K_XL', '65 GB'], updated: 'New', agent: true, released: '2025-04', downloadUrl: HF('unsloth/Llama-4-Scout-17B-16E-Instruct-GGUF', 'Llama-4-Scout-17B-16E-Instruct-UD-Q2_K_XL.gguf'), filename: 'Llama-4-Scout-17B-16E-Instruct-UD-Q2_K_XL.gguf', sizeGB: 65 },
+    // ── Gemma 3 (March 2025) ──
+    { name: 'Gemma 3 12B', description: 'Google Gemma 3 12B — vision support, great quality.', tags: ['12B', 'Q4_K_M', '8 GB'], updated: 'Popular', released: '2025-03', downloadUrl: HF('unsloth/gemma-3-12b-it-GGUF', 'gemma-3-12b-it-Q4_K_M.gguf'), filename: 'gemma-3-12b-it-Q4_K_M.gguf', sizeGB: 8 },
+    { name: 'Gemma 3 27B', description: 'Google Gemma 3 27B — strong reasoning + vision.', tags: ['27B', 'Q4_K_M', '17 GB'], updated: 'Popular', released: '2025-03', downloadUrl: HF('unsloth/gemma-3-27b-it-GGUF', 'gemma-3-27b-it-Q4_K_M.gguf'), filename: 'gemma-3-27b-it-Q4_K_M.gguf', sizeGB: 17 },
+    // ── Phi 4 (Dec 2024) ──
+    { name: 'Phi-4 14B', description: 'Microsoft Phi-4 — excellent at math, logic, structured tasks.', tags: ['14B', 'Q4_K_M', '9 GB'], updated: 'Popular', agent: true, released: '2024-12', downloadUrl: HF('bartowski/phi-4-GGUF', 'phi-4-Q4_K_M.gguf'), filename: 'phi-4-Q4_K_M.gguf', sizeGB: 9 },
+    // ── Llama 3.3 / 3.1 ──
+    { name: 'Llama 3.3 70B', description: 'Meta Llama 3.3 70B — maximum intelligence for high-end setups.', tags: ['70B', 'Q4_K_M', '42 GB'], updated: 'Popular', released: '2024-12', downloadUrl: HF('bartowski/Llama-3.3-70B-Instruct-GGUF', 'Llama-3.3-70B-Instruct-Q4_K_M.gguf'), filename: 'Llama-3.3-70B-Instruct-Q4_K_M.gguf', sizeGB: 42 },
+    { name: 'Llama 3.1 8B', description: 'Meta Llama 3.1 8B — fast, reliable, great entry point.', tags: ['8B', 'Q4_K_M', '5 GB'], updated: 'Popular', released: '2024-07', downloadUrl: HF('bartowski/Meta-Llama-3.1-8B-Instruct-GGUF', 'Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf'), filename: 'Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf', sizeGB: 5 },
+    // ── Mistral ──
+    { name: 'Mistral Small 24B', description: 'Mistral Small — fast, multilingual, native tool calling.', tags: ['24B', 'Q4_K_M', '14 GB'], updated: 'Popular', agent: true, released: '2024-09', downloadUrl: HF('bartowski/Mistral-Small-24B-Instruct-2501-GGUF', 'Mistral-Small-24B-Instruct-2501-Q4_K_M.gguf'), filename: 'Mistral-Small-24B-Instruct-2501-Q4_K_M.gguf', sizeGB: 14 },
+    { name: 'Mistral Nemo 12B', description: 'Mistral Nemo 12B — multilingual powerhouse.', tags: ['12B', 'Q4_K_M', '7 GB'], updated: 'Popular', released: '2024-07', downloadUrl: HF('bartowski/Mistral-Nemo-Instruct-2407-GGUF', 'Mistral-Nemo-Instruct-2407-Q4_K_M.gguf'), filename: 'Mistral-Nemo-Instruct-2407-Q4_K_M.gguf', sizeGB: 7 },
+    // ── Qwen 2.5 ──
+    { name: 'Qwen 2.5 7B', description: 'Qwen 2.5 7B — proven and reliable all-rounder.', tags: ['7B', 'Q4_K_M', '5 GB'], updated: 'Popular', released: '2024-09', downloadUrl: HF('bartowski/Qwen2.5-7B-Instruct-GGUF', 'Qwen2.5-7B-Instruct-Q4_K_M.gguf'), filename: 'Qwen2.5-7B-Instruct-Q4_K_M.gguf', sizeGB: 5 },
+  ])
+}
+
+/** Combined HF models for search fallback */
+export function getHuggingFaceModels(): DiscoverModel[] {
+  return [...getHuggingFaceUncensoredModels(), ...getHuggingFaceMainstreamModels()]
+}
+
+/** Search HuggingFace for GGUF models */
+export async function searchHuggingFaceModels(query: string): Promise<DiscoverModel[]> {
+  try {
+    const searchQuery = query.includes('gguf') ? query : `${query} gguf`
+    const url = `https://huggingface.co/api/models?search=${encodeURIComponent(searchQuery)}&filter=gguf&sort=downloads&direction=-1&limit=20`
+
+    let json: string
+    const { isTauri, fetchExternal } = await import('./backend')
+    if (isTauri()) {
+      json = await fetchExternal(url)
+    } else {
+      const res = await fetch(url)
+      json = await res.text()
+    }
+
+    const repos: Array<{ id: string; downloads?: number; modelId?: string }> = JSON.parse(json)
+
+    const models: DiscoverModel[] = []
+    for (const repo of repos) {
+      // Derive Q4_K_M filename from repo name: "user/Model-Name-GGUF" → "Model-Name-Q4_K_M.gguf"
+      const repoName = repo.id.split('/').pop() || ''
+      const baseName = repoName.replace(/-GGUF$/i, '').replace(/-gguf$/i, '')
+      const q4File = `${baseName}-Q4_K_M.gguf`
+      const downloadUrl = `https://huggingface.co/${repo.id}/resolve/main/${q4File}`
+
+      const downloads = repo.downloads || 0
+      const pullsStr = downloads > 1000000 ? `${(downloads / 1000000).toFixed(1)}M` :
+        downloads > 1000 ? `${Math.round(downloads / 1000)}K` : `${downloads}`
+
+      models.push({
+        name: baseName,
+        description: repo.id,
+        pulls: pullsStr,
+        tags: ['Q4_K_M', 'GGUF'],
+        updated: '',
+        downloadUrl,
+        filename: q4File,
+        url: `https://huggingface.co/${repo.id}`,
+      })
+    }
+    return models
+  } catch {
+    return []
+  }
+}
+
+/** Detect the model directory for the active local provider */
+export async function detectProviderModelPath(providerName: string): Promise<string | null> {
+  try {
+    return await backendCall('detect_model_path', { provider: providerName })
+  } catch {
+    return null
+  }
+}
+
+/** Download a GGUF model to a specific directory (for non-Ollama providers) */
+export async function startModelDownloadToPath(url: string, destDir: string, filename: string): Promise<{ status: string; id: string; error?: string }> {
+  return backendCall('download_model_to_path', { url, dest_dir: destDir, filename })
 }
 
 // ─── Image Model Bundles ───
@@ -441,17 +682,53 @@ export function getImageModelsDiscover(): DiscoverModel[] {
 // Each bundle contains ALL files needed for a working video workflow.
 // "Install All" downloads model + VAE + CLIP together.
 
+export interface CustomNodeDef {
+  key: string
+  repo: string
+  name: string
+}
+
+export const CUSTOM_NODE_REGISTRY: Record<string, { repo: string; name: string; requiredNodes: string[] }> = {
+  'animatediff-evolved': {
+    repo: 'https://github.com/Kosinkadink/ComfyUI-AnimateDiff-Evolved',
+    name: 'ComfyUI-AnimateDiff-Evolved',
+    requiredNodes: ['ADE_LoadAnimateDiffModel', 'ADE_ApplyAnimateDiffModelSimple', 'ADE_UseEvolvedSampling'],
+  },
+  'cogvideox-wrapper': {
+    repo: 'https://github.com/kijai/ComfyUI-CogVideoXWrapper',
+    name: 'ComfyUI-CogVideoXWrapper',
+    requiredNodes: ['CogVideoXModelLoader', 'CogVideoXCLIPLoader', 'CogVideoXTextEncode', 'CogVideoXEmptyLatents', 'CogVideoXSampler', 'CogVideoXVAEDecode'],
+  },
+  'framepack-wrapper': {
+    repo: 'https://github.com/kijai/ComfyUI-FramePackWrapper',
+    name: 'ComfyUI-FramePackWrapper',
+    requiredNodes: ['FramePackModelLoader', 'FramePackEncode', 'FramePackSampler'],
+  },
+  'pyramidflow-wrapper': {
+    repo: 'https://github.com/kijai/ComfyUI-PyramidFlowWrapper',
+    name: 'ComfyUI-PyramidFlowWrapper',
+    requiredNodes: ['PyramidFlowModelLoader', 'PyramidFlowVAELoader', 'PyramidFlowTextEncode', 'PyramidFlowSampler', 'PyramidFlowDecode'],
+  },
+  'allegro': {
+    repo: 'https://github.com/bombax-xiaoice/ComfyUI-Allegro',
+    name: 'ComfyUI-Allegro',
+    requiredNodes: ['AllegroModelLoader', 'AllegroTextEncode', 'AllegroSampler', 'AllegroDecoder'],
+  },
+}
+
 export interface ModelBundle {
   name: string
   description: string
   tags: string[]
   totalSizeGB: number
   vramRequired: string
-  workflow: 'wan' | 'hunyuan' | 'animatediff'
+  workflow: string
   files: DiscoverModel[]
   url?: string
   hot?: boolean
   uncensored?: boolean
+  customNodes?: string[]  // keys into CUSTOM_NODE_REGISTRY
+  i2v?: boolean           // Image-to-Video model
 }
 
 export function getVideoBundles(): ModelBundle[] {
@@ -527,6 +804,7 @@ export function getVideoBundles(): ModelBundle[] {
       name: 'HunyuanVideo 1.5 T2V FP8 (High Quality)',
       description: 'Tencent HunyuanVideo 1.5 — excellent temporal consistency and visual quality. 480p text-to-video with CFG distillation.',
       tags: ['HunyuanVideo 1.5', '480p', 'Quality'],
+      uncensored: true,
       totalSizeGB: 21.5,
       vramRequired: '12+ GB',
       workflow: 'hunyuan',
@@ -568,7 +846,7 @@ export function getVideoBundles(): ModelBundle[] {
       tags: ['LTX 2.3', '22B', 'Quality'],
       totalSizeGB: 35,
       vramRequired: '16+ GB',
-      workflow: 'wan',
+      workflow: 'ltx',
       url: 'https://huggingface.co/Lightricks/LTX-2.3-fp8',
       files: [
         {
@@ -584,6 +862,299 @@ export function getVideoBundles(): ModelBundle[] {
           pulls: '', tags: ['Text Encoder', '~12 GB'], updated: 'New',
           downloadUrl: 'https://huggingface.co/Comfy-Org/ltx-2/resolve/main/split_files/text_encoders/gemma_3_12B_it_fp8_scaled.safetensors',
           filename: 'gemma_3_12B_it_fp8_scaled.safetensors', subfolder: 'text_encoders', sizeGB: 12,
+        },
+      ],
+    },
+    // ─── NEW VIDEO BUNDLES ───
+    {
+      name: 'AnimateDiff Lightning',
+      description: 'Ultra-fast 4-step animation on any SD1.5 checkpoint. Great for quick iterations. Needs an SD1.5 base model.',
+      tags: ['AnimateDiff', '512x512', 'Lightning'],
+      hot: true,
+      totalSizeGB: 2.4,
+      vramRequired: '6-8 GB',
+      workflow: 'animatediff',
+      customNodes: ['animatediff-evolved'],
+      url: 'https://huggingface.co/ByteDance/AnimateDiff-Lightning',
+      files: [
+        {
+          name: 'AnimateDiff Lightning Motion Model (4-step)',
+          description: 'Lightning-fast motion model — only 4 sampling steps needed.',
+          pulls: '', tags: ['Motion', '400 MB'], updated: '',
+          downloadUrl: 'https://huggingface.co/ByteDance/AnimateDiff-Lightning/resolve/main/animatediff_lightning_4step_comfyui.safetensors',
+          filename: 'animatediff_lightning_4step_comfyui.safetensors', subfolder: 'custom_nodes/ComfyUI-AnimateDiff-Evolved/models', sizeGB: 0.4,
+        },
+        {
+          name: 'Realistic Vision V6 (SD1.5 Base)',
+          description: 'Recommended SD1.5 base checkpoint for realistic animations.',
+          pulls: '', tags: ['Checkpoint', '~2 GB'], updated: '',
+          downloadUrl: 'https://huggingface.co/SG161222/Realistic_Vision_V6.0_B1_noVAE/resolve/main/Realistic_Vision_V6.0_NV_B1_fp16.safetensors',
+          filename: 'Realistic_Vision_V6.0_NV_B1_fp16.safetensors', subfolder: 'checkpoints', sizeGB: 2.0,
+        },
+      ],
+    },
+    {
+      name: 'AnimateDiff v3',
+      description: 'Classic AnimateDiff with more frames and better quality than Lightning. Slower but more detailed.',
+      tags: ['AnimateDiff', '512x768', 'Quality'],
+      totalSizeGB: 3.8,
+      vramRequired: '6-8 GB',
+      workflow: 'animatediff',
+      customNodes: ['animatediff-evolved'],
+      url: 'https://huggingface.co/guoyww/animatediff',
+      files: [
+        {
+          name: 'AnimateDiff v3 Motion Adapter',
+          description: 'Standard motion model — 20 steps, good quality.',
+          pulls: '', tags: ['Motion', '1.8 GB'], updated: '',
+          downloadUrl: 'https://huggingface.co/guoyww/animatediff/resolve/main/v3_sd15_adapter.ckpt',
+          filename: 'v3_sd15_adapter.ckpt', subfolder: 'custom_nodes/ComfyUI-AnimateDiff-Evolved/models', sizeGB: 1.8,
+        },
+        {
+          name: 'Realistic Vision V6 (SD1.5 Base)',
+          description: 'Recommended SD1.5 base checkpoint.',
+          pulls: '', tags: ['Checkpoint', '~2 GB'], updated: '',
+          downloadUrl: 'https://huggingface.co/SG161222/Realistic_Vision_V6.0_B1_noVAE/resolve/main/Realistic_Vision_V6.0_NV_B1_fp16.safetensors',
+          filename: 'Realistic_Vision_V6.0_NV_B1_fp16.safetensors', subfolder: 'checkpoints', sizeGB: 2.0,
+        },
+      ],
+    },
+    {
+      name: 'CogVideoX 2B',
+      description: 'Lightweight video model by Tsinghua. 480x480 output, 8-12 GB VRAM. Good text-to-video quality for its size.',
+      tags: ['CogVideoX', '480x480', 'Lightweight'],
+      uncensored: true,
+      totalSizeGB: 15.3,
+      vramRequired: '8-12 GB',
+      workflow: 'cogvideo',
+      customNodes: ['cogvideox-wrapper'],
+      url: 'https://huggingface.co/THUDM/CogVideoX-2b',
+      files: [
+        {
+          name: 'CogVideoX 2B Model',
+          description: 'Main video generation model.',
+          pulls: '', tags: ['Model', '5.5 GB'], updated: '',
+          downloadUrl: 'https://huggingface.co/Kijai/CogVideoX_comfy/resolve/main/CogVideoX_2b_bf16.safetensors',
+          filename: 'CogVideoX_2b_bf16.safetensors', subfolder: 'diffusion_models', sizeGB: 5.5,
+        },
+        {
+          name: 'CogVideoX VAE',
+          description: 'Required video encoder/decoder.',
+          pulls: '', tags: ['VAE', '300 MB'], updated: '',
+          downloadUrl: 'https://huggingface.co/Kijai/CogVideoX_comfy/resolve/main/cogvideox_vae.safetensors',
+          filename: 'cogvideox_vae.safetensors', subfolder: 'vae', sizeGB: 0.3,
+        },
+        {
+          name: 'T5-XXL Text Encoder (FP16)',
+          description: 'Required text encoder (shared with other models).',
+          pulls: '', tags: ['Text Encoder', '9.5 GB'], updated: '',
+          downloadUrl: 'https://huggingface.co/Kijai/CogVideoX_comfy/resolve/main/t5xxl_fp16.safetensors',
+          filename: 't5xxl_fp16.safetensors', subfolder: 'text_encoders', sizeGB: 9.5,
+        },
+      ],
+    },
+    {
+      name: 'CogVideoX 1.5 5B',
+      description: 'Larger CogVideoX with 1360x768 output. Better quality, needs 16 GB VRAM.',
+      tags: ['CogVideoX 1.5', '1360x768', 'Quality'],
+      uncensored: true,
+      totalSizeGB: 19.8,
+      vramRequired: '16+ GB',
+      workflow: 'cogvideo',
+      customNodes: ['cogvideox-wrapper'],
+      url: 'https://huggingface.co/THUDM/CogVideoX1.5-5B',
+      files: [
+        {
+          name: 'CogVideoX 1.5 5B Model',
+          description: 'Higher quality video model with wider resolution.',
+          pulls: '', tags: ['Model', '10 GB'], updated: '',
+          downloadUrl: 'https://huggingface.co/Kijai/CogVideoX_comfy/resolve/main/CogVideoX1.5_5b_bf16.safetensors',
+          filename: 'CogVideoX1.5_5b_bf16.safetensors', subfolder: 'diffusion_models', sizeGB: 10,
+        },
+        {
+          name: 'CogVideoX VAE',
+          description: 'Required video encoder/decoder.',
+          pulls: '', tags: ['VAE', '300 MB'], updated: '',
+          downloadUrl: 'https://huggingface.co/Kijai/CogVideoX_comfy/resolve/main/cogvideox_vae.safetensors',
+          filename: 'cogvideox_vae.safetensors', subfolder: 'vae', sizeGB: 0.3,
+        },
+        {
+          name: 'T5-XXL Text Encoder (FP16)',
+          description: 'Required text encoder (shared with other models).',
+          pulls: '', tags: ['Text Encoder', '9.5 GB'], updated: '',
+          downloadUrl: 'https://huggingface.co/Kijai/CogVideoX_comfy/resolve/main/t5xxl_fp16.safetensors',
+          filename: 't5xxl_fp16.safetensors', subfolder: 'text_encoders', sizeGB: 9.5,
+        },
+      ],
+    },
+    {
+      name: 'FramePack F1 (Image-to-Video)',
+      description: 'Revolutionary I2V: runs on 6 GB VRAM via next-frame prediction. Upload an image, get a video. Uses HunyuanVideo backbone.',
+      tags: ['FramePack', 'I2V', 'Low VRAM'],
+      hot: true,
+      uncensored: true,
+      totalSizeGB: 19.3,
+      vramRequired: '6-8 GB',
+      workflow: 'framepack',
+      i2v: true,
+      customNodes: ['framepack-wrapper'],
+      url: 'https://huggingface.co/lllyasviel/FramePack_F1_I2V_HY_20250503',
+      files: [
+        {
+          name: 'FramePack F1 I2V Model (FP8)',
+          description: 'Main I2V model — generates video from a single image.',
+          pulls: '', tags: ['Model', '13 GB'], updated: '',
+          downloadUrl: 'https://huggingface.co/Kijai/HunyuanVideo_comfy/resolve/main/FramePackI2V_HY_fp8_e4m3fn.safetensors',
+          filename: 'FramePackI2V_HY_fp8_e4m3fn.safetensors', subfolder: 'diffusion_models', sizeGB: 13,
+        },
+        {
+          name: 'SigCLIP Vision Encoder',
+          description: 'Required vision encoder for image understanding.',
+          pulls: '', tags: ['CLIP Vision', '900 MB'], updated: '',
+          downloadUrl: 'https://huggingface.co/Comfy-Org/sigclip_vision_384/resolve/main/sigclip_vision_384.safetensors',
+          filename: 'sigclip_vision_384.safetensors', subfolder: 'clip_vision', sizeGB: 0.9,
+        },
+        {
+          name: 'HunyuanVideo VAE',
+          description: 'Required video encoder/decoder (shared with HunyuanVideo).',
+          pulls: '', tags: ['VAE', '490 MB'], updated: '',
+          downloadUrl: 'https://huggingface.co/Comfy-Org/HunyuanVideo_1.5_repackaged/resolve/main/split_files/vae/hunyuanvideo15_vae_fp16.safetensors',
+          filename: 'hunyuanvideo15_vae_fp16.safetensors', subfolder: 'vae', sizeGB: 0.5,
+        },
+        {
+          name: 'CLIP-L Text Encoder',
+          description: 'Required text encoder (shared).',
+          pulls: '', tags: ['Text Encoder', '240 MB'], updated: '',
+          downloadUrl: 'https://huggingface.co/Comfy-Org/HunyuanVideo_repackaged/resolve/main/split_files/text_encoders/clip_l.safetensors',
+          filename: 'clip_l.safetensors', subfolder: 'text_encoders', sizeGB: 0.2,
+        },
+        {
+          name: 'LLaVA LLaMA3 Text Encoder (FP8)',
+          description: 'Required text encoder for FramePack.',
+          pulls: '', tags: ['Text Encoder', '4.7 GB'], updated: '',
+          downloadUrl: 'https://huggingface.co/Comfy-Org/HunyuanVideo_repackaged/resolve/main/split_files/text_encoders/llava_llama3_fp8_scaled.safetensors',
+          filename: 'llava_llama3_fp8_scaled.safetensors', subfolder: 'text_encoders', sizeGB: 4.7,
+        },
+      ],
+    },
+    {
+      name: 'SVD-XT 1.1 (Image-to-Video)',
+      description: 'Stable Video Diffusion by Stability AI. Upload an image, get 25 frames of smooth video. Native ComfyUI support.',
+      tags: ['SVD', 'I2V', 'Native'],
+      totalSizeGB: 9.5,
+      vramRequired: '12+ GB',
+      workflow: 'svd',
+      i2v: true,
+      url: 'https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt-1-1',
+      files: [
+        {
+          name: 'SVD-XT 1.1 Checkpoint',
+          description: 'Complete I2V model — no additional downloads needed.',
+          pulls: '', tags: ['Checkpoint', '9.5 GB'], updated: '',
+          downloadUrl: 'https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt-1-1/resolve/main/svd_xt_1_1.safetensors',
+          filename: 'svd_xt_1_1.safetensors', subfolder: 'checkpoints', sizeGB: 9.5,
+        },
+      ],
+    },
+    {
+      name: 'Mochi 1 Preview (FP8)',
+      description: 'Genmo Mochi — 848x480 video at 24 FPS. Good motion and temporal consistency. Native ComfyUI support.',
+      tags: ['Mochi', '848x480', 'Native'],
+      totalSizeGB: 10.3,
+      vramRequired: '16+ GB',
+      workflow: 'mochi',
+      url: 'https://huggingface.co/Comfy-Org/mochi_preview_repackaged',
+      files: [
+        {
+          name: 'Mochi 1 Preview (FP8)',
+          description: 'Main video model (quantized for lower VRAM).',
+          pulls: '', tags: ['Model', '10 GB'], updated: '',
+          downloadUrl: 'https://huggingface.co/Comfy-Org/mochi_preview_repackaged/resolve/main/split_files/diffusion_models/mochi_preview_fp8_scaled.safetensors',
+          filename: 'mochi_preview_fp8_scaled.safetensors', subfolder: 'diffusion_models', sizeGB: 10,
+        },
+        {
+          name: 'Mochi VAE',
+          description: 'Required video encoder/decoder.',
+          pulls: '', tags: ['VAE', '300 MB'], updated: '',
+          downloadUrl: 'https://huggingface.co/Comfy-Org/mochi_preview_repackaged/resolve/main/split_files/vae/mochi_vae.safetensors',
+          filename: 'mochi_vae.safetensors', subfolder: 'vae', sizeGB: 0.3,
+        },
+      ],
+    },
+    {
+      name: 'Pyramid Flow SD3',
+      description: 'Pyramid-style temporal generation based on SD3. 768x1280 output. Experimental but interesting results.',
+      tags: ['Pyramid Flow', '768x1280', 'Experimental'],
+      totalSizeGB: 8.8,
+      vramRequired: '16+ GB',
+      workflow: 'pyramidflow',
+      customNodes: ['pyramidflow-wrapper'],
+      url: 'https://huggingface.co/rain1011/pyramid-flow-sd3',
+      files: [
+        {
+          name: 'Pyramid Flow Model',
+          description: 'Main video generation model.',
+          pulls: '', tags: ['Model', '8.5 GB'], updated: '',
+          downloadUrl: 'https://huggingface.co/Kijai/pyramid-flow-comfy/resolve/main/pyramid_flow_model.safetensors',
+          filename: 'pyramid_flow_model.safetensors', subfolder: 'diffusion_models', sizeGB: 8.5,
+        },
+        {
+          name: 'Pyramid Flow VAE',
+          description: 'Required video encoder/decoder.',
+          pulls: '', tags: ['VAE', '300 MB'], updated: '',
+          downloadUrl: 'https://huggingface.co/Kijai/pyramid-flow-comfy/resolve/main/pyramid_flow_vae.safetensors',
+          filename: 'pyramid_flow_vae.safetensors', subfolder: 'vae', sizeGB: 0.3,
+        },
+      ],
+    },
+    {
+      name: 'Allegro',
+      description: 'Rhymes AI Allegro — 720x1280 video at 15 FPS. Diffusers format, auto-downloaded on first use. High VRAM needed.',
+      tags: ['Allegro', '720x1280', 'High-End'],
+      totalSizeGB: 15.5,
+      vramRequired: '24+ GB',
+      workflow: 'allegro',
+      customNodes: ['allegro'],
+      url: 'https://huggingface.co/rhymes-ai/Allegro',
+      files: [
+        {
+          name: 'Allegro Model (Diffusers)',
+          description: 'Full model — auto-downloads additional components on first ComfyUI use.',
+          pulls: '', tags: ['Model', '~15.5 GB'], updated: '',
+          downloadUrl: 'https://huggingface.co/rhymes-ai/Allegro/resolve/main/model_index.json',
+          filename: 'allegro_model_index.json', subfolder: 'diffusion_models', sizeGB: 15.5,
+        },
+      ],
+    },
+    {
+      name: 'NVIDIA Cosmos 7B',
+      description: 'NVIDIA Cosmos Diffusion 7B Text-to-World. 1024x1024 output at 24 FPS. Native ComfyUI support. Uses oldt5 text encoder (NOT t5xxl).',
+      tags: ['Cosmos', '1024x1024', 'NVIDIA'],
+      totalSizeGB: 19.2,
+      vramRequired: '24+ GB',
+      workflow: 'cosmos',
+      url: 'https://huggingface.co/comfyanonymous/cosmos_1.0_text2world_safetensors',
+      files: [
+        {
+          name: 'Cosmos 7B Text2World',
+          description: 'Main video generation model by NVIDIA.',
+          pulls: '', tags: ['Model', '14 GB'], updated: '',
+          downloadUrl: 'https://huggingface.co/comfyanonymous/cosmos_1.0_text2world_safetensors/resolve/main/Cosmos-1_0-Diffusion-7B-Text2World.safetensors',
+          filename: 'Cosmos-1_0-Diffusion-7B-Text2World.safetensors', subfolder: 'diffusion_models', sizeGB: 14,
+        },
+        {
+          name: 'OldT5-XXL Text Encoder (FP8)',
+          description: 'Required text encoder — NOT the same as regular T5-XXL!',
+          pulls: '', tags: ['Text Encoder', '4.9 GB'], updated: '',
+          downloadUrl: 'https://huggingface.co/comfyanonymous/cosmos_1.0_text2world_safetensors/resolve/main/oldt5_xxl_fp8_e4m3fn_scaled.safetensors',
+          filename: 'oldt5_xxl_fp8_e4m3fn_scaled.safetensors', subfolder: 'text_encoders', sizeGB: 4.9,
+        },
+        {
+          name: 'Cosmos VAE',
+          description: 'Required video encoder/decoder.',
+          pulls: '', tags: ['VAE', '300 MB'], updated: '',
+          downloadUrl: 'https://huggingface.co/comfyanonymous/cosmos_1.0_text2world_safetensors/resolve/main/cosmos_cv8x8x8_1.0.safetensors',
+          filename: 'cosmos_cv8x8x8_1.0.safetensors', subfolder: 'vae', sizeGB: 0.3,
         },
       ],
     },

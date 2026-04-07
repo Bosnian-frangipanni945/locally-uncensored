@@ -113,6 +113,7 @@ export async function backendCall<T = any>(
     set_comfyui_path: { path: "/local-api/set-comfyui-path", method: "POST" },
     install_comfyui: { path: "/local-api/install-comfyui", method: "POST" },
     install_comfyui_status: { path: "/local-api/install-comfyui" },
+    install_custom_node: { path: "/local-api/install-custom-node", method: "POST" },
     whisper_status: { path: "/local-api/transcribe-status" },
     transcribe: { path: "/local-api/transcribe", method: "POST" },
     execute_code: { path: "/local-api/execute-code", method: "POST" },

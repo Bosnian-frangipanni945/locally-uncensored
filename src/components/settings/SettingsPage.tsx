@@ -99,6 +99,106 @@ function WorkflowSection() {
   )
 }
 
+// ── ComfyUI Settings ────────────────────────────────────────────
+
+function ComfyUISettings() {
+  const [status, setStatus] = useState<{ running: boolean; found: boolean; path?: string; starting?: boolean } | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    const check = async () => {
+      try {
+        const { backendCall } = await import('../../api/backend')
+        const s: any = await backendCall('comfyui_status')
+        if (!cancelled) setStatus(s)
+      } catch {}
+      if (!cancelled) setLoading(false)
+    }
+    check()
+    const interval = setInterval(check, 5000)
+    return () => { cancelled = true; clearInterval(interval) }
+  }, [])
+
+  const handleStart = async () => {
+    try {
+      const { backendCall } = await import('../../api/backend')
+      await backendCall('start_comfyui')
+      setStatus(prev => prev ? { ...prev, starting: true } : null)
+    } catch {}
+  }
+
+  const handleStop = async () => {
+    try {
+      const { backendCall } = await import('../../api/backend')
+      await backendCall('stop_comfyui')
+      setStatus(prev => prev ? { ...prev, running: false } : null)
+    } catch {}
+  }
+
+  if (loading) {
+    return <div className="flex items-center gap-2 text-[0.65rem] text-gray-500"><Loader2 size={12} className="animate-spin" /> Checking...</div>
+  }
+
+  return (
+    <div className="space-y-2">
+      {/* Status */}
+      <div className="flex items-center justify-between">
+        <span className="text-[0.7rem] text-gray-700 dark:text-gray-400">Status</span>
+        <div className="flex items-center gap-1.5">
+          <div className={`w-1.5 h-1.5 rounded-full ${status?.running ? 'bg-green-500' : status?.found ? 'bg-orange-500' : 'bg-gray-500'}`} />
+          <span className="text-[0.65rem] text-gray-500">
+            {status?.running ? 'Running' : status?.found ? 'Stopped' : 'Not Installed'}
+          </span>
+        </div>
+      </div>
+
+      {/* Path */}
+      {status?.path && (
+        <div className="flex items-center justify-between">
+          <span className="text-[0.7rem] text-gray-700 dark:text-gray-400">Path</span>
+          <span className="text-[0.55rem] font-mono text-gray-500 truncate max-w-48" title={status.path}>{status.path}</span>
+        </div>
+      )}
+
+      {/* Controls */}
+      <div className="flex items-center gap-1.5">
+        {status?.found && !status.running && (
+          <button onClick={handleStart} className="px-2 py-1 rounded text-[0.6rem] bg-green-500/10 text-green-400 hover:bg-green-500/20 transition-colors">
+            Start
+          </button>
+        )}
+        {status?.running && (
+          <button onClick={handleStop} className="px-2 py-1 rounded text-[0.6rem] bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors">
+            Stop
+          </button>
+        )}
+        {status?.running && (
+          <button
+            onClick={async () => { await handleStop(); setTimeout(handleStart, 2000) }}
+            className="px-2 py-1 rounded text-[0.6rem] bg-white/5 text-gray-400 hover:bg-white/10 transition-colors"
+          >
+            Restart
+          </button>
+        )}
+        {!status?.found && (
+          <button
+            onClick={async () => {
+              try {
+                const { backendCall } = await import('../../api/backend')
+                await backendCall('install_comfyui')
+              } catch {}
+            }}
+            className="px-2 py-1 rounded text-[0.6rem] bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 transition-colors"
+          >
+            Install ComfyUI
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Main Component ──────────────────────────────────────────────
 
 export function SettingsPage() {
@@ -186,6 +286,11 @@ export function SettingsPage() {
         {/* ── Providers ──────────────────────────────── */}
         <Section title="Providers" defaultOpen>
           <ProviderSettings />
+        </Section>
+
+        {/* ── ComfyUI (Image & Video Engine) ─────────── */}
+        <Section title="ComfyUI (Image & Video)">
+          <ComfyUISettings />
         </Section>
 
         {/* ── Voice ──────────────────────────────────── */}

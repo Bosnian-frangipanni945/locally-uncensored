@@ -63,6 +63,7 @@ interface CreateState {
   batchSize: number
   frames: number
   fps: number
+  i2vImage: string | null  // Uploaded image filename for I2V models (SVD, FramePack)
   isGenerating: boolean
   progress: number
   progressText: string
@@ -91,6 +92,7 @@ interface CreateState {
   setBatchSize: (batchSize: number) => void
   setFrames: (frames: number) => void
   setFps: (fps: number) => void
+  setI2vImage: (image: string | null) => void
   setIsGenerating: (generating: boolean) => void
   setProgress: (progress: number, text?: string) => void
   setProgressPhase: (phase: ProgressPhase) => void
@@ -122,6 +124,7 @@ export const useCreateStore = create<CreateState>()(
       batchSize: 1,
       frames: 24,
       fps: 8,
+      i2vImage: null,
       isGenerating: false,
       progress: 0,
       progressText: '',
@@ -172,6 +175,7 @@ export const useCreateStore = create<CreateState>()(
       setBatchSize: (batchSize) => set({ batchSize: Math.max(1, Math.min(8, Math.floor(batchSize))) }),
       setFrames: (frames) => set({ frames: Math.max(1, Math.min(120, Math.floor(frames))) }),
       setFps: (fps) => set({ fps: Math.max(1, Math.min(60, Math.floor(fps))) }),
+      setI2vImage: (image) => set({ i2vImage: image }),
       setIsGenerating: (generating) => set({ isGenerating: generating, ...(generating ? {} : { progressPhase: 'idle' as ProgressPhase }) }),
       setProgress: (progress, text) => set({ progress, progressText: text ?? '' }),
       setProgressPhase: (phase) => set({ progressPhase: phase }),

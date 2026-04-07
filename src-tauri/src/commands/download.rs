@@ -425,3 +425,121 @@ pub fn download_progress(state: State<'_, AppState>) -> Result<serde_json::Value
     let map: HashMap<String, DownloadProgress> = downloads.clone();
     Ok(serde_json::to_value(map).unwrap_or_default())
 }
+
+// ─── HuggingFace GGUF Downloads (to provider model dirs) ───
+
+#[tauri::command]
+pub fn detect_model_path(provider: String) -> Result<serde_json::Value, String> {
+    let home = dirs::home_dir().ok_or("Cannot find home directory")?;
+    let provider_lower = provider.to_lowercase();
+
+    let candidates: Vec<PathBuf> = match provider_lower.as_str() {
+        "lm studio" | "lmstudio" => vec![
+            home.join(".cache").join("lm-studio").join("models"),
+        ],
+        "jan" => vec![
+            dirs::data_dir().unwrap_or_else(|| home.clone()).join("Jan").join("data").join("models"),
+            home.join("jan").join("models"),
+        ],
+        "gpt4all" => vec![
+            dirs::data_local_dir().unwrap_or_else(|| home.clone()).join("nomic.ai").join("GPT4All"),
+        ],
+        "localai" => vec![
+            home.join(".localai").join("models"),
+        ],
+        _ => vec![], // vLLM, llama.cpp, etc. — no standard path
+    };
+
+    for path in &candidates {
+        if path.exists() {
+            return Ok(serde_json::json!(path.to_string_lossy()));
+        }
+    }
+
+    // Fallback: create LU models directory
+    let fallback = home.join("locally-uncensored").join("models");
+    fs::create_dir_all(&fallback).map_err(|e| format!("Create fallback dir: {}", e))?;
+    Ok(serde_json::json!(fallback.to_string_lossy()))
+}
+
+#[tauri::command]
+pub async fn download_model_to_path(
+    url: String,
+    dest_dir: String,
+    filename: String,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let dir = PathBuf::from(&dest_dir);
+    fs::create_dir_all(&dir).map_err(|e| format!("Create dest dir: {}", e))?;
+    let dest_file = dir.join(&filename);
+
+    if dest_file.exists() {
+        return Ok(serde_json::json!({"status": "exists", "path": dest_file.to_string_lossy()}));
+    }
+
+    let id = filename.clone();
+    let tmp_path = dest_file.with_extension("download");
+    let resume_offset = if tmp_path.exists() {
+        tmp_path.metadata().map(|m| m.len()).unwrap_or(0)
+    } else {
+        0
+    };
+
+    let token = CancellationToken::new();
+    {
+        let mut tokens = state.download_tokens.lock().unwrap();
+        tokens.insert(id.clone(), token.clone());
+    }
+    {
+        let mut downloads = state.downloads.lock().unwrap();
+        downloads.insert(id.clone(), DownloadProgress {
+            progress: resume_offset,
+            total: 0,
+            speed: 0.0,
+            filename: filename.clone(),
+            status: "connecting".to_string(),
+            error: None,
+        });
+    }
+
+    let downloads_arc = Arc::clone(&state.downloads);
+    let tokens_arc = Arc::clone(&state.download_tokens);
+    let id_clone = id.clone();
+    let filename_clone = filename.clone();
+
+    tokio::spawn(async move {
+        match do_download(&url, &dest_file, &downloads_arc, &id_clone, token, resume_offset).await {
+            Ok(_) => {
+                if let Ok(mut dl) = downloads_arc.lock() {
+                    if let Some(p) = dl.get_mut(&id_clone) {
+                        p.status = "complete".to_string();
+                    }
+                }
+                println!("[Download] Complete: {} -> {}", filename_clone, dest_dir);
+            }
+            Err(e) => {
+                if e == "paused" {
+                    println!("[Download] Paused: {}", filename_clone);
+                } else if e == "cancelled" {
+                    let tmp = dest_file.with_extension("download");
+                    let _ = std::fs::remove_file(&tmp);
+                    if let Ok(mut dl) = downloads_arc.lock() {
+                        dl.remove(&id_clone);
+                    }
+                } else {
+                    if let Ok(mut dl) = downloads_arc.lock() {
+                        if let Some(p) = dl.get_mut(&id_clone) {
+                            p.status = "error".to_string();
+                            p.error = Some(e.clone());
+                        }
+                    }
+                }
+            }
+        }
+        if let Ok(mut tokens) = tokens_arc.lock() {
+            tokens.remove(&id_clone);
+        }
+    });
+
+    Ok(serde_json::json!({"status": "started", "id": id}))
+}

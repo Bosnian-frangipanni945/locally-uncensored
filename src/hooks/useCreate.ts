@@ -126,7 +126,7 @@ export function useCreate() {
     const state = useCreateStore.getState()
     const {
       mode, prompt, negativePrompt, imageModel, videoModel,
-      sampler, scheduler, steps, cfgScale, width, height, seed, batchSize, frames, fps,
+      sampler, scheduler, steps, cfgScale, width, height, seed, batchSize, frames, fps, i2vImage,
       setIsGenerating, setProgress, setCurrentPromptId, setError, addToGallery, addToPromptHistory,
     } = state
 
@@ -182,13 +182,13 @@ export function useCreate() {
       if (customWf) {
         builderUsed = 'custom'
         setProgress(5, `Using workflow: ${customWf.name}...`)
-        const params = mode === 'video' ? { ...baseParams, frames, fps } : baseParams
+        const params = mode === 'video' ? { ...baseParams, frames, fps, ...(i2vImage ? { inputImage: i2vImage } : {}) } : baseParams
         workflow = await injectParameters(customWf.workflow, customWf.parameterMap, params, imageModelType)
       } else {
         // Dynamic workflow builder — auto-detects nodes and builds the right pipeline
         setProgress(5, 'Building workflow...')
         try {
-          const genParams = mode === 'video' ? { ...baseParams, frames, fps } : baseParams
+          const genParams = mode === 'video' ? { ...baseParams, frames, fps, ...(i2vImage ? { inputImage: i2vImage } : {}) } : baseParams
           workflow = await buildDynamicWorkflow(genParams, imageModelType)
           builderUsed = 'dynamic'
         } catch (dynErr) {

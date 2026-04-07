@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Sun, Moon, ArrowRight, Download, Check, ChevronRight, Loader2, Pause, RefreshCw, ExternalLink } from 'lucide-react'
+import { Minus, Square, Copy, X as XIcon, ArrowRight, Download, Check, ChevronRight, Loader2, Pause, RefreshCw, ExternalLink, FolderOpen } from 'lucide-react'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useProviderStore } from '../../stores/providerStore'
 import { useModels } from '../../hooks/useModels'
@@ -9,8 +9,12 @@ import { PROVIDER_PRESETS } from '../../api/providers/types'
 import { detectLocalBackends, type DetectedBackend } from '../../lib/backend-detector'
 import { ProgressBar } from '../ui/ProgressBar'
 import { formatBytes } from '../../lib/formatters'
+import { backendCall } from '../../api/backend'
+import { getSystemVRAM } from '../../api/comfyui'
 
-type Step = 'welcome' | 'theme' | 'backends' | 'models' | 'done'
+type Step = 'welcome' | 'theme' | 'backends' | 'comfyui' | 'models' | 'done'
+const STEP_ORDER: Step[] = ['welcome', 'theme', 'backends', 'comfyui', 'models', 'done']
+const isTauri = typeof window !== 'undefined' && !!(window as any).__TAURI_INTERNALS__
 
 /* ── Local backend info for the "nothing found" state ──────── */
 interface LocalBackendInfo {
@@ -47,6 +51,17 @@ export function Onboarding() {
   const [detecting, setDetecting] = useState(false)
   const [selectedBackend, setSelectedBackend] = useState<string>('')
   const { setProviderConfig } = useProviderStore()
+
+  // ComfyUI step state
+  const [comfyDetecting, setComfyDetecting] = useState(false)
+  const [comfyFound, setComfyFound] = useState<{ found: boolean; path?: string } | null>(null)
+  const [comfyInstalling, setComfyInstalling] = useState(false)
+  const [comfyInstallLogs, setComfyInstallLogs] = useState<string[]>([])
+  const [comfyInstallError, setComfyInstallError] = useState('')
+  const [comfyPathInput, setComfyPathInput] = useState('')
+  const [comfyReady, setComfyReady] = useState(false)
+  const [systemVRAM, setSystemVRAM] = useState<number | null>(null)
+  const [modelSubTab, setModelSubTab] = useState<'uncensored' | 'mainstream'>('uncensored')
 
   const isDark = settings.theme === 'dark'
   const bgClass = isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-gray-900'
@@ -85,6 +100,23 @@ export function Onboarding() {
     })
   }
 
+  // Detect system VRAM for model filtering
+  useEffect(() => { getSystemVRAM().then(v => setSystemVRAM(v)).catch(() => {}) }, [])
+
+  // Auto-detect ComfyUI when entering the comfyui step
+  useEffect(() => {
+    if (step === 'comfyui' && !comfyFound && !comfyDetecting) {
+      setComfyDetecting(true)
+      backendCall<{ found: boolean; path?: string }>('find_comfyui')
+        .then(result => {
+          setComfyFound(result)
+          if (result.found) setComfyReady(true)
+        })
+        .catch(() => setComfyFound({ found: false }))
+        .finally(() => setComfyDetecting(false))
+    }
+  }, [step])
+
   const currentPull = pullingModel ? activePulls[pullingModel] : null
   const pullProgress = currentPull?.progress ?? null
   const progress =
@@ -102,8 +134,31 @@ export function Onboarding() {
     isDark ? 'bg-white/10 text-white hover:bg-white/15' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
   }`
 
+  const handleMinimize = async () => { const { getCurrentWindow } = await import('@tauri-apps/api/window'); getCurrentWindow().minimize() }
+  const handleMaximize = async () => { const { getCurrentWindow } = await import('@tauri-apps/api/window'); getCurrentWindow().toggleMaximize() }
+  const handleClose = async () => { const { getCurrentWindow } = await import('@tauri-apps/api/window'); getCurrentWindow().close() }
+  const winBtn = 'inline-flex items-center justify-center w-[46px] h-8 transition-colors text-gray-400 hover:text-gray-200'
+
+  const stepIndex = STEP_ORDER.indexOf(step)
+
   return (
     <div className={`h-screen w-screen flex items-center justify-center p-4 ${bgClass}`}>
+      {/* Drag region + window controls */}
+      {isTauri && (
+        <div data-tauri-drag-region className="fixed top-0 left-0 right-0 h-8 z-50 flex items-center justify-end select-none">
+          <button onClick={handleMinimize} className={winBtn} aria-label="Minimize"><Minus size={14} strokeWidth={1.5} /></button>
+          <button onClick={handleMaximize} className={winBtn} aria-label="Maximize"><Square size={11} strokeWidth={1.5} /></button>
+          <button onClick={handleClose} className={`${winBtn} hover:bg-red-500 hover:text-white`} aria-label="Close"><XIcon size={14} strokeWidth={1.5} /></button>
+        </div>
+      )}
+
+      {/* Step indicator dots */}
+      <div className="fixed top-10 left-1/2 -translate-x-1/2 z-40 flex gap-1.5">
+        {STEP_ORDER.map((s, i) => (
+          <div key={s} className={`w-1.5 h-1.5 rounded-full transition-colors ${i <= stepIndex ? (isDark ? 'bg-white' : 'bg-gray-900') : (isDark ? 'bg-white/15' : 'bg-gray-300')}`} />
+        ))}
+      </div>
+
       <AnimatePresence mode="wait">
         {/* Step 1: Welcome */}
         {step === 'welcome' && (
@@ -142,7 +197,7 @@ export function Onboarding() {
                   !isDark ? 'border-gray-900 bg-gray-50' : 'border-white/10 hover:border-white/20'
                 }`}
               >
-                <Sun size={18} className={isDark ? 'text-gray-400' : 'text-yellow-500'} />
+                <div className="w-4 h-4 rounded-full bg-white border border-gray-300" />
                 <span className="text-[0.7rem] font-medium">Light</span>
               </button>
               <button
@@ -151,7 +206,7 @@ export function Onboarding() {
                   isDark ? 'border-white bg-white/10' : 'border-gray-200 hover:border-gray-400'
                 }`}
               >
-                <Moon size={18} className={isDark ? 'text-white' : 'text-gray-600'} />
+                <div className="w-4 h-4 rounded-full bg-[#050505]" />
                 <span className="text-[0.7rem] font-medium">Dark</span>
               </button>
             </div>
@@ -236,12 +291,8 @@ export function Onboarding() {
                           })
                         }
                       }
-                      // Go to models if Ollama detected (can pull models), otherwise done
-                      if (hasOllama) {
-                        setStep('models')
-                      } else {
-                        setStep('done')
-                      }
+                      // Go to ComfyUI step next
+                      setStep('comfyui')
                     }}
                     className={primaryBtn}
                   >
@@ -287,7 +338,7 @@ export function Onboarding() {
                   <button onClick={runDetection} className={secondaryBtn}>
                     <RefreshCw size={12} /> Re-Scan
                   </button>
-                  <button onClick={() => setStep('done')} className={`${secondaryBtn} opacity-60`}>
+                  <button onClick={() => setStep('comfyui')} className={`${secondaryBtn} opacity-60`}>
                     Skip for now <ChevronRight size={12} />
                   </button>
                 </div>
@@ -296,7 +347,192 @@ export function Onboarding() {
           </motion.div>
         )}
 
-        {/* Step 4: Models (Ollama only — pull models) */}
+        {/* Step 4: ComfyUI Setup */}
+        {step === 'comfyui' && (
+          <motion.div
+            key="comfyui"
+            className="max-w-md w-full text-center space-y-4"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+          >
+            <div className="w-3 h-3 rounded-full bg-purple-400 mx-auto" />
+            <h2 className="text-base font-semibold">Image & Video Generation</h2>
+            <p className={`text-[0.7rem] ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+              Generate images and videos right from the app. We'll set everything up for you.
+            </p>
+
+            {/* Auto-detecting */}
+            {comfyDetecting && (
+              <div className="flex items-center justify-center gap-2">
+                <Loader2 size={14} className="animate-spin text-gray-400" />
+                <span className={`text-[0.7rem] ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Looking for ComfyUI...</span>
+              </div>
+            )}
+
+            {/* Found */}
+            {comfyFound?.found && !comfyInstalling && (
+              <div className={`p-3 rounded-lg border ${isDark ? 'bg-green-500/10 border-green-500/20' : 'bg-green-50 border-green-200'}`}>
+                <div className="flex items-center gap-2 justify-center">
+                  <Check size={14} className="text-green-400" />
+                  <span className="text-[0.7rem] font-medium">ComfyUI detected</span>
+                </div>
+                <p className={`text-[0.55rem] font-mono mt-1 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>{comfyFound.path}</p>
+              </div>
+            )}
+
+            {/* Not found — install options */}
+            {comfyFound && !comfyFound.found && !comfyInstalling && !comfyReady && (
+              <div className="space-y-2">
+                <button
+                  onClick={async () => {
+                    setComfyInstalling(true)
+                    setComfyInstallError('')
+                    setComfyInstallLogs(['Starting ComfyUI installation...'])
+                    try {
+                      await backendCall('install_comfyui')
+                      // Poll installation status
+                      const poll = setInterval(async () => {
+                        try {
+                          const status: any = await backendCall('install_comfyui_status')
+                          setComfyInstallLogs(status.logs || [])
+                          if (status.status === 'complete' || status.status === 'done') {
+                            clearInterval(poll)
+                            setComfyInstalling(false)
+                            setComfyReady(true)
+                            // Auto-start ComfyUI
+                            try { await backendCall('start_comfyui') } catch {}
+                          } else if (status.status === 'error') {
+                            clearInterval(poll)
+                            setComfyInstalling(false)
+                            setComfyInstallError('Installation failed. Check logs below.')
+                          }
+                        } catch { /* keep polling */ }
+                      }, 2000)
+                    } catch (err) {
+                      setComfyInstalling(false)
+                      setComfyInstallError(err instanceof Error ? err.message : 'Installation failed')
+                    }
+                  }}
+                  className={`w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[0.7rem] font-medium transition-all ${
+                    isDark ? 'bg-white text-black hover:bg-gray-200' : 'bg-gray-900 text-white hover:bg-gray-800'
+                  }`}
+                >
+                  <Download size={14} /> Install ComfyUI (Recommended)
+                </button>
+                <button
+                  onClick={() => {
+                    const input = document.createElement('input')
+                    input.type = 'text'
+                    // Show path input inline
+                    setComfyPathInput('')
+                    setComfyFound({ found: false })
+                  }}
+                  className={secondaryBtn}
+                  style={{ width: '100%', justifyContent: 'center' }}
+                >
+                  <FolderOpen size={14} /> I already have ComfyUI
+                </button>
+
+                {/* Manual path input */}
+                {comfyPathInput !== undefined && (
+                  <div className="flex gap-1.5">
+                    <input
+                      type="text"
+                      value={comfyPathInput}
+                      onChange={e => setComfyPathInput(e.target.value)}
+                      placeholder="C:\ComfyUI"
+                      className={`flex-1 px-2 py-1.5 rounded-lg border text-[0.65rem] font-mono ${
+                        isDark ? 'bg-black border-white/10 text-white' : 'bg-white border-gray-300 text-gray-900'
+                      }`}
+                    />
+                    <button
+                      onClick={async () => {
+                        if (!comfyPathInput.trim()) return
+                        try {
+                          await backendCall('set_comfyui_path', { path: comfyPathInput.trim() })
+                          setComfyReady(true)
+                          try { await backendCall('start_comfyui') } catch {}
+                        } catch (err) {
+                          setComfyInstallError(err instanceof Error ? err.message : 'Invalid path')
+                        }
+                      }}
+                      className={primaryBtn}
+                    >
+                      Connect
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Installing progress */}
+            {comfyInstalling && (
+              <div className={`p-3 rounded-lg border ${cardClass} text-left`}>
+                <div className="flex items-center gap-2 mb-2">
+                  <Loader2 size={14} className="animate-spin text-purple-400" />
+                  <span className="text-[0.7rem] font-medium">Installing ComfyUI...</span>
+                </div>
+                <div className={`text-[0.55rem] font-mono max-h-24 overflow-y-auto space-y-0.5 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                  {comfyInstallLogs.slice(-8).map((log, i) => (
+                    <p key={i}>{log}</p>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Error */}
+            {comfyInstallError && (
+              <p className="text-[0.65rem] text-red-400">{comfyInstallError}</p>
+            )}
+
+            {/* Ready state */}
+            {comfyReady && (
+              <div className={`p-3 rounded-lg border ${isDark ? 'bg-green-500/10 border-green-500/20' : 'bg-green-50 border-green-200'}`}>
+                <div className="flex items-center gap-2 justify-center">
+                  <Check size={14} className="text-green-400" />
+                  <span className="text-[0.7rem] font-medium">ComfyUI is ready</span>
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center justify-center gap-2 pt-1">
+              {(comfyFound?.found || comfyReady) && (
+                <button
+                  onClick={() => hasOllama ? setStep('models') : setStep('done')}
+                  className={primaryBtn}
+                >
+                  Continue <ArrowRight size={14} />
+                </button>
+              )}
+              {!comfyInstalling && !comfyFound?.found && !comfyReady && (
+                <>
+                  <button
+                    onClick={() => {
+                      setComfyDetecting(true)
+                      setComfyFound(null)
+                      backendCall<{ found: boolean; path?: string }>('find_comfyui')
+                        .then(result => { setComfyFound(result); if (result.found) setComfyReady(true) })
+                        .catch(() => setComfyFound({ found: false }))
+                        .finally(() => setComfyDetecting(false))
+                    }}
+                    className={secondaryBtn}
+                  >
+                    <RefreshCw size={12} /> Re-Scan
+                  </button>
+                  <button
+                    onClick={() => hasOllama ? setStep('models') : setStep('done')}
+                    className={`${secondaryBtn} opacity-60`}
+                  >
+                    Skip for now <ChevronRight size={12} />
+                  </button>
+                </>
+              )}
+            </div>
+          </motion.div>
+        )}
+
+        {/* Step 5: Models (Ollama only — pull models) */}
         {step === 'models' && (
           <motion.div
             key="models"
@@ -308,8 +544,20 @@ export function Onboarding() {
             <div className="text-center mb-3">
               <h2 className="text-base font-semibold mb-1">Choose your models</h2>
               <p className={`text-[0.7rem] ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                Select uncensored models to install. You can add more later.
+                {systemVRAM ? `Showing models for your ${systemVRAM} GB GPU.` : 'Select models to install.'} You can add more later.
               </p>
+            </div>
+
+            {/* Uncensored / Mainstream tabs */}
+            <div className="flex gap-4 justify-center">
+              <button onClick={() => setModelSubTab('uncensored')} className={`flex items-center gap-2 transition-all ${modelSubTab === 'uncensored' ? 'opacity-100' : 'opacity-40 hover:opacity-70'}`}>
+                <div className={`w-1 h-4 rounded-full ${modelSubTab === 'uncensored' ? 'bg-red-500' : 'bg-red-500/50'}`} />
+                <span className="text-[0.65rem] font-semibold uppercase tracking-wider">Uncensored</span>
+              </button>
+              <button onClick={() => setModelSubTab('mainstream')} className={`flex items-center gap-2 transition-all ${modelSubTab === 'mainstream' ? 'opacity-100' : 'opacity-40 hover:opacity-70'}`}>
+                <div className={`w-1 h-4 rounded-full ${modelSubTab === 'mainstream' ? 'bg-blue-500' : 'bg-blue-500/50'}`} />
+                <span className="text-[0.65rem] font-semibold uppercase tracking-wider">Mainstream</span>
+              </button>
             </div>
 
             {isPulling && pullingModel && (
@@ -334,7 +582,14 @@ export function Onboarding() {
             )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[50vh] overflow-y-auto scrollbar-thin pr-1">
-              {ONBOARDING_MODELS.map((model) => {
+              {ONBOARDING_MODELS.filter(m => {
+                // Filter by tab
+                if (modelSubTab === 'uncensored' && !m.uncensored) return false
+                if (modelSubTab === 'mainstream' && m.uncensored) return false
+                // Filter by VRAM if known
+                if (systemVRAM && m.vramGB > systemVRAM) return false
+                return true
+              }).map((model) => {
                 const selected = selectedModels.includes(model.name)
                 const pulled = pulledModels.includes(model.name) || installedModels.some((m) => m.name === model.name)
                 return (
@@ -357,6 +612,11 @@ export function Onboarding() {
                           {model.recommended && (
                             <span className={`text-[0.5rem] px-1 py-0.5 rounded ${isDark ? 'bg-white/10 text-gray-300' : 'bg-gray-200 text-gray-600'}`}>
                               Recommended
+                            </span>
+                          )}
+                          {model.agent && (
+                            <span className={`text-[0.5rem] px-1 py-0.5 rounded ${isDark ? 'bg-green-500/15 text-green-400 border border-green-500/30' : 'bg-green-50 text-green-700 border border-green-200'}`}>
+                              Tool Calling
                             </span>
                           )}
                         </div>
@@ -411,19 +671,17 @@ export function Onboarding() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
           >
-            <div className={`w-10 h-10 rounded-lg flex items-center justify-center mx-auto ${isDark ? 'bg-green-500/10' : 'bg-green-50'}`}>
-              <Check size={20} className="text-green-400" />
-            </div>
+            <div className="w-3 h-3 rounded-full bg-green-400 mx-auto" />
             <h2 className="text-base font-semibold">You're all set!</h2>
             <p className={`text-[0.75rem] ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
               {pulledModels.length > 0
-                ? `${pulledModels.length} model${pulledModels.length > 1 ? 's' : ''} installed. Start chatting!`
+                ? `${pulledModels.length} model${pulledModels.length > 1 ? 's' : ''} installed. You're ready to go.`
                 : detectedBackends.length > 0
-                ? `Connected to ${detectedBackends.find(b => b.id === selectedBackend)?.name || detectedBackends[0].name}. Start chatting!`
+                ? `Connected to ${detectedBackends.find(b => b.id === selectedBackend)?.name || detectedBackends[0].name}. You're ready to go.`
                 : 'You can configure backends and install models anytime from Settings and Model Manager.'}
             </p>
             <button onClick={finish} className={primaryBtn}>
-              Start Chatting <ArrowRight size={14} />
+              Get Started <ArrowRight size={14} />
             </button>
           </motion.div>
         )}

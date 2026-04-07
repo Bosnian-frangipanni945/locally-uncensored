@@ -91,22 +91,39 @@ export function categorizeNodes(allNodes: Record<string, NodeMetadata>): Categor
     CLIPLoader: 'loaders',
     DualCLIPLoader: 'loaders',
     TripleCLIPLoader: 'loaders',
+    ImageOnlyCheckpointLoader: 'loaders',
+    CLIPVisionLoader: 'loaders',
+    LoadImage: 'loaders',
     // Samplers
     KSampler: 'samplers',
     KSamplerAdvanced: 'samplers',
     SamplerCustom: 'samplers',
+    // Wrapper samplers (custom nodes)
+    CogVideoXSampler: 'samplers',
+    FramePackSampler: 'samplers',
+    PyramidFlowSampler: 'samplers',
+    AllegroSampler: 'samplers',
     // Latent init
     EmptyLatentImage: 'latentInit',
     EmptySD3LatentImage: 'latentInit',
     EmptyFlux2LatentImage: 'latentInit',
     EmptyHunyuanLatentVideo: 'latentInit',
     EmptyLTXVLatentVideo: 'latentInit',
+    EmptyMochiLatentVideo: 'latentInit',
+    EmptyCosmosLatentVideo: 'latentInit',
+    CogVideoXEmptyLatents: 'latentInit',
     // Text encoding
     CLIPTextEncode: 'textEncoders',
     CLIPTextEncodeSDXL: 'textEncoders',
+    CogVideoXTextEncode: 'textEncoders',
+    PyramidFlowTextEncode: 'textEncoders',
+    AllegroTextEncode: 'textEncoders',
     // Decoders
     VAEDecode: 'decoders',
     VAEDecodeTiled: 'decoders',
+    CogVideoXVAEDecode: 'decoders',
+    PyramidFlowDecode: 'decoders',
+    AllegroDecoder: 'decoders',
     // Image savers
     SaveImage: 'savers',
     PreviewImage: 'savers',
@@ -117,6 +134,17 @@ export function categorizeNodes(allNodes: Record<string, NodeMetadata>): Categor
     ADE_LoadAnimateDiffModel: 'motion',
     ADE_ApplyAnimateDiffModelSimple: 'motion',
     ADE_UseEvolvedSampling: 'motion',
+    // SVD-specific
+    SVD_img2vid_Conditioning: 'motion',
+    VideoLinearCFGGuidance: 'motion',
+    // Wrapper loaders (custom nodes)
+    CogVideoXModelLoader: 'loaders',
+    CogVideoXCLIPLoader: 'loaders',
+    FramePackModelLoader: 'loaders',
+    FramePackEncode: 'loaders',
+    PyramidFlowModelLoader: 'loaders',
+    PyramidFlowVAELoader: 'loaders',
+    AllegroModelLoader: 'loaders',
   }
 
   for (const nodeName of Object.keys(allNodes)) {

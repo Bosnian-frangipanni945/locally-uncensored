@@ -204,19 +204,30 @@ export interface OnboardingModel {
   description: string
   size: string
   vram: string
+  vramGB: number
   recommended?: boolean
+  uncensored?: boolean
+  agent?: boolean  // Supports tool calling / agent mode
 }
 
 export const ONBOARDING_MODELS: OnboardingModel[] = [
-  { name: 'mannix/llama3.1-8b-abliterated:q5_K_M', label: 'Llama 3.1 8B', description: 'Fast & reliable all-rounder', size: '5.7 GB', vram: '6 GB', recommended: true },
-  { name: 'huihui_ai/qwen3-abliterated:8b', label: 'Qwen3 8B', description: 'Latest Qwen, great for coding', size: '5.2 GB', vram: '6 GB' },
-  { name: 'richardyoung/qwen3-14b-abliterated:q4_K_M', label: 'Qwen3 14B', description: 'Very smart, fits 12GB GPU', size: '9 GB', vram: '12 GB' },
-  { name: 'huihui_ai/gemma3-abliterated:12b', label: 'Gemma 3 12B', description: 'Google model, vision support', size: '8 GB', vram: '12 GB' },
-  { name: 'krith/mistral-nemo-instruct-2407-abliterated:IQ4_XS', label: 'Mistral Nemo 12B', description: 'Strong multilingual model', size: '6.8 GB', vram: '8 GB' },
-  { name: 'huihui_ai/deepseek-r1-abliterated:8b', label: 'DeepSeek R1 8B', description: 'Reasoning & chain-of-thought', size: '5 GB', vram: '6 GB' },
-  { name: 'huihui_ai/phi4-abliterated:14b', label: 'Phi-4 14B', description: 'Microsoft, great at math & logic', size: '9 GB', vram: '12 GB' },
-  { name: 'huihui_ai/mistral-small-abliterated:24b', label: 'Mistral Small 24B', description: 'Powerful, needs 16GB+ VRAM', size: '14 GB', vram: '16 GB' },
-  { name: 'huihui_ai/glm4.6-abliterated:9b', label: 'GLM 4.6 9B', description: 'Newest model, strong coding', size: '6 GB', vram: '8 GB' },
-  { name: 'huihui_ai/qwen2.5-abliterated:7b', label: 'Qwen 2.5 7B', description: 'Lightweight & capable', size: '4.7 GB', vram: '6 GB' },
-  { name: 'huihui_ai/llama3.3-abliterated:70b-q4_K_M', label: 'Llama 3.3 70B', description: 'Maximum intelligence, needs 48GB', size: '42 GB', vram: '48 GB' },
+  // Uncensored (abliterated)
+  { name: 'mannix/llama3.1-8b-abliterated:q5_K_M', label: 'Llama 3.1 8B', description: 'Fast & reliable all-rounder', size: '5.7 GB', vram: '6 GB', vramGB: 6, recommended: true, uncensored: true, agent: true },
+  { name: 'huihui_ai/qwen3-abliterated:8b', label: 'Qwen3 8B', description: 'Latest Qwen, great for coding', size: '5.2 GB', vram: '6 GB', vramGB: 6, uncensored: true, agent: true },
+  { name: 'richardyoung/qwen3-14b-abliterated:q4_K_M', label: 'Qwen3 14B', description: 'Very smart, fits 12GB GPU', size: '9 GB', vram: '12 GB', vramGB: 12, uncensored: true, agent: true },
+  { name: 'huihui_ai/gemma3-abliterated:12b', label: 'Gemma 3 12B', description: 'Google model, vision support', size: '8 GB', vram: '12 GB', vramGB: 12, uncensored: true, agent: true },
+  { name: 'krith/mistral-nemo-instruct-2407-abliterated:IQ4_XS', label: 'Mistral Nemo 12B', description: 'Strong multilingual model', size: '6.8 GB', vram: '8 GB', vramGB: 8, uncensored: true },
+  { name: 'huihui_ai/deepseek-r1-abliterated:8b', label: 'DeepSeek R1 8B', description: 'Reasoning & chain-of-thought', size: '5 GB', vram: '6 GB', vramGB: 6, uncensored: true },
+  { name: 'huihui_ai/phi4-abliterated:14b', label: 'Phi-4 14B', description: 'Microsoft, great at math & logic', size: '9 GB', vram: '12 GB', vramGB: 12, uncensored: true },
+  { name: 'huihui_ai/mistral-small-abliterated:24b', label: 'Mistral Small 24B', description: 'Powerful, needs 16GB+ VRAM', size: '14 GB', vram: '16 GB', vramGB: 16, uncensored: true, agent: true },
+  { name: 'huihui_ai/glm4.6-abliterated:9b', label: 'GLM 4.6 9B', description: 'Newest model, strong coding', size: '6 GB', vram: '8 GB', vramGB: 8, uncensored: true, agent: true },
+  { name: 'huihui_ai/qwen2.5-abliterated:7b', label: 'Qwen 2.5 7B', description: 'Lightweight & capable', size: '4.7 GB', vram: '6 GB', vramGB: 6, uncensored: true, agent: true },
+  { name: 'huihui_ai/llama3.3-abliterated:70b-q4_K_M', label: 'Llama 3.3 70B', description: 'Maximum intelligence, needs 48GB', size: '42 GB', vram: '48 GB', vramGB: 48, uncensored: true, agent: true },
+  // Mainstream (official, not abliterated)
+  { name: 'llama3.1:8b', label: 'Llama 3.1 8B', description: 'Meta general-purpose model', size: '4.7 GB', vram: '6 GB', vramGB: 6, recommended: true, agent: true },
+  { name: 'qwen3:8b', label: 'Qwen3 8B', description: 'Latest Qwen, coding & reasoning', size: '5.2 GB', vram: '6 GB', vramGB: 6, agent: true },
+  { name: 'gemma3:12b', label: 'Gemma 3 12B', description: 'Google model, vision support', size: '8 GB', vram: '12 GB', vramGB: 12, agent: true },
+  { name: 'phi4:14b', label: 'Phi-4 14B', description: 'Microsoft, math & logic', size: '9 GB', vram: '12 GB', vramGB: 12 },
+  { name: 'deepseek-r1:8b', label: 'DeepSeek R1 8B', description: 'Reasoning & chain-of-thought', size: '5 GB', vram: '6 GB', vramGB: 6 },
+  { name: 'gemma4:e4b', label: 'Gemma 4 E4B', description: 'Google latest, lightweight MoE', size: '3 GB', vram: '4 GB', vramGB: 4, agent: true },
 ]
