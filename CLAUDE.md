@@ -51,8 +51,8 @@ src-tauri/src/commands/      — Rust commands: install, process, download, prox
 21. **All 3 download flows Tauri-verified** — Ollama pull (events), HF GGUF (invoke), ComfyUI bundles (invoke) — all arg mappings, command registrations, progress polling confirmed
 
 ### What's LEFT to finish v2.3.0:
-1. **E2E workflow test** — verify that downloaded models actually generate images/videos in ComfyUI (all files confirmed on disk in correct paths)
-2. **Tauri build E2E test** — build .exe, run all 3 download flows (Ollama pull, HF GGUF, ComfyUI bundle), verify in production
+1. **E2E per-model verification** — every single model in Discover (Text/Image/Video) must be tested: download starts, progress shows, file lands on disk at correct path with correct size. Partial downloads must trigger re-download, not false "exists".
+2. **Tauri .exe E2E** — run the built .exe (not dev server), test all 3 download flows end-to-end in production mode
 
 ### What was FIXED (download overhaul):
 1. **install_custom_node camelCase bug** — Tauri 2 expects camelCase args (repoUrl/nodeName), was sending snake_case. Fixed in discover.ts + vite.config.ts
@@ -69,6 +69,10 @@ src-tauri/src/commands/      — Rust commands: install, process, download, prox
 12. **Dev-mode detect-model-path fallback** — returned null without LM Studio. Now falls back to ~/locally-uncensored/models/ (parity with Rust)
 13. **isInstalled prefix-match for Ollama** — `hermes3` now matches installed `hermes3:8b`. Was: exact match only, never showed INSTALLED badge
 14. **pullModel fetchModels error isolation** — fetchModels() error after completePull() no longer swallows the entire success path
+15. **Partial download "exists" bug** — files only partially downloaded (e.g. 36 MB of 10 GB) were falsely reported as complete. Added expectedBytes size validation (>= 90% threshold) to download_model, download_model_to_path (Rust) and dev-server. Incomplete files now get re-downloaded with resume.
+16. **Double-click guard on bundle install** — clicking Install twice no longer starts duplicate downloads
+17. **handleRefresh race condition** — loading flag was cleared before async detectProviderModelPath resolved
+18. **Dev-mode fetchModels try-catch** — pullModel completion in dev mode could crash if Ollama stopped during fetchModels
 
 ### Files modified in this branch (23+ files):
 - `src/api/comfyui.ts` — 7 new ModelTypes, COMPONENT_REGISTRY, uploadImage(), inputImage in VideoParams
