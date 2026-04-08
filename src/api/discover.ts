@@ -270,136 +270,113 @@ export const COMPONENT_REGISTRY: Record<string, ComponentRequirements> = {
   unknown: { loader: 'CheckpointLoaderSimple', needsSeparateVAE: false, needsSeparateCLIP: false },
 }
 
-// ─── Ollama Text Models ───
+// ─── Text Models (HuggingFace GGUF — unified source for all providers) ───
 
-/** Get featured HOT models (always shown at top of discover) */
-export function getHotTextModels(): DiscoverModel[] {
-  return getCuratedTextModels().filter(m => m.hot)
-}
-
-export async function fetchAbliteratedModels(): Promise<DiscoverModel[]> {
-  const hotModels = getHotTextModels()
-  const searchResults = await searchOllamaModels('abliterated')
-  // Merge: HOT first, then search results (deduplicated)
-  const hotNames = new Set(hotModels.map(m => m.name))
-  const deduped = searchResults.filter(m => !hotNames.has(m.name))
-  return [...hotModels, ...deduped]
-}
-
-/** Search Ollama registry — works in both Tauri and dev mode */
-export async function searchOllamaModels(query: string): Promise<DiscoverModel[]> {
-  try {
-    let html: string
-
-    const { isTauri, fetchExternal } = await import("./backend")
-    if (isTauri()) {
-      // In Tauri: use fetchExternal to bypass CORS
-      html = await fetchExternal(`https://ollama.com/search?q=${encodeURIComponent(query)}&p=1`)
-    } else {
-      // In dev: use proxy
-      const res = await fetch(`/ollama-search?q=${encodeURIComponent(query)}&p=1`)
-      html = await res.text()
-    }
-
-    const models = parseOllamaSearchHTML(html)
-    if (models.length === 0) return getCuratedTextModels()
-    return models
-  } catch {
-    return getCuratedTextModels()
-  }
-}
-
-function parseOllamaSearchHTML(html: string): DiscoverModel[] {
-  const models: DiscoverModel[] = []
-  const parser = new DOMParser()
-  const doc = parser.parseFromString(html, 'text/html')
-
-  const items = doc.querySelectorAll('[x-test-search-response-title]')
-  items.forEach((item) => {
-    const container = item.closest('a') || item.parentElement?.closest('a')
-    const name = item.textContent?.trim() || ''
-    const href = container?.getAttribute('href') || ''
-
-    const parent = item.closest('div')?.parentElement
-    const spans = parent?.querySelectorAll('span') || []
-    let pulls = ''
-    let updated = ''
-
-    spans.forEach((span) => {
-      const text = span.textContent?.trim() || ''
-      if (text.includes('Pull') || text.includes('K') || text.includes('M')) {
-        if (!pulls) pulls = text
-      }
-      if (text.includes('ago') || text.includes('month') || text.includes('week') || text.includes('day')) {
-        updated = text
-      }
-    })
-
-    if (name && href) {
-      models.push({
-        name: href.startsWith('/') ? href.slice(1) : name,
-        description: '',
-        pulls,
-        tags: [],
-        updated,
-      })
-    }
-  })
-
-  return models
-}
+const HF = (repo: string, file: string) => `https://huggingface.co/${repo}/resolve/main/${file}`
 
 /** Sort models by release date, newest first */
 function sortByRelease(models: DiscoverModel[]): DiscoverModel[] {
   return models.sort((a, b) => (b.released ?? '').localeCompare(a.released ?? ''))
 }
 
-/** Uncensored / abliterated models — the core of LU */
+/** Uncensored / abliterated GGUF models — the core of LU. One entry per size variant. */
 export function getUncensoredTextModels(): DiscoverModel[] {
   return sortByRelease([
-    // ── HOT: Agent Mode + Uncensored ──
-    { name: 'hermes3', description: 'NousResearch Hermes 3 — uncensored + native tool calling. THE agent model.', pulls: '500K+', tags: ['3B', '8B', '70B', '405B'], updated: 'Hot', hot: true, agent: true, released: '2024-08' },
-    { name: 'dolphin3', description: 'Dolphin 3 — uncensored from training. Coding, math, general purpose.', pulls: '3.7M', tags: ['8B'], updated: 'Hot', hot: true, released: '2024-12' },
-    { name: 'huihui_ai/qwen3.5-abliterated', description: 'Qwen 3.5 abliterated — newest, strongest reasoning + coding.', pulls: '10K+', tags: ['9B', '27B', '35B'], updated: 'Hot', hot: true, released: '2026-03' },
-    { name: 'huihui_ai/gpt-oss-abliterated', description: 'OpenAI GPT-OSS — abliterated open-source GPT model.', pulls: '15K+', tags: ['20B', '120B'], updated: 'Hot', hot: true, released: '2026-03' },
-    { name: 'huihui_ai/qwen3-coder-abliterated', description: 'Qwen3-Coder abliterated — 30B MoE (3B active), built for code agents. 256K context.', pulls: '5K+', tags: ['30B', '480B'], updated: 'Hot', hot: true, agent: true, released: '2026-02' },
-    { name: 'aratan/gemma-4-31B-it-uncensores', description: 'Gemma 4 31B uncensored — frontier dense model, native tool calling + vision. 256K context.', pulls: '400+', tags: ['31B'], updated: 'Hot', hot: true, agent: true, released: '2026-04' },
-    { name: 'juilpark/gemma-4-26B-A4B-it-heretic', description: 'Gemma 4 26B MoE HERETIC — 26B brain, 4B active. Uncensored + tools + vision.', pulls: '30+', tags: ['26B'], updated: 'Hot', hot: true, agent: true, released: '2026-04' },
-    { name: 'juilpark/gemma-4-31B-it-uncensored-heretic', description: 'Gemma 4 31B HERETIC — full uncensor, native tool calling, 256K context.', pulls: '80+', tags: ['31B'], updated: 'Hot', hot: true, agent: true, released: '2026-04' },
-    { name: 'charaf/gemma4-31b-claude-opus-abliterated', description: 'Gemma 4 31B abliterated — Claude Opus-style tuning, strong reasoning.', pulls: '360+', tags: ['31B'], updated: 'New', hot: true, agent: true, released: '2026-04' },
-    // ── Popular Uncensored ──
-    { name: 'huihui_ai/qwen3-abliterated', description: 'Qwen3 abliterated — best overall. Exceptional reasoning, coding, multilingual.', pulls: '30K+', tags: ['8B', '30B'], updated: 'Popular', released: '2025-05' },
-    { name: 'mannix/llama3.1-8b-abliterated', description: 'Llama 3.1 8B — fast, reliable, great entry point.', pulls: '200K+', tags: ['Q5_K_M', 'Q4_K_M'], updated: 'Popular', released: '2024-07' },
-    { name: 'huihui_ai/deepseek-r1-abliterated', description: 'DeepSeek R1 — chain-of-thought reasoning. Scales to your hardware.', pulls: '40K+', tags: ['8B', '14B', '32B', '70B'], updated: 'Popular', released: '2025-01' },
-    { name: 'huihui_ai/glm4.6-abliterated', description: 'GLM 4.6 abliterated — newest model, strong coding and reasoning.', pulls: '5K+', tags: ['357B'], updated: 'New', released: '2026-03' },
-    { name: 'kiwi_kiwi/gemma-4-uncensores', description: 'Gemma 4 31B uncensored — strong all-rounder, vision + tool calling.', pulls: '400+', tags: ['31B'], updated: 'New', agent: true, released: '2026-04' },
-    { name: 'huihui_ai/gemma3-abliterated', description: 'Google Gemma 3 — vision support, great quality.', pulls: '20K+', tags: ['4B', '12B', '27B'], updated: 'Popular', released: '2025-03' },
-    { name: 'richardyoung/qwen3-14b-abliterated', description: 'Qwen3 14B — sweet spot of speed and intelligence.', pulls: '4K+', tags: ['Q4_K_M', 'Q5_K_M'], updated: 'Recent', released: '2025-05' },
-    { name: 'huihui_ai/qwen2.5-abliterate', description: 'Qwen 2.5 abliterated series — proven and reliable.', pulls: '50K+', tags: ['7B', '14B', '32B'], updated: 'Popular', released: '2024-09' },
-    { name: 'huihui_ai/llama3.3-abliterated', description: 'Llama 3.3 70B — maximum intelligence for high-VRAM setups.', pulls: '15K+', tags: ['70B'], updated: 'Popular', released: '2024-12' },
-    { name: 'huihui_ai/mistral-small-abliterated', description: 'Mistral Small 24B — powerful, strong multilingual.', pulls: '10K+', tags: ['24B'], updated: 'Recent', released: '2024-09' },
-    { name: 'huihui_ai/phi4-abliterated', description: 'Microsoft Phi-4 — excellent at math, logic, structured tasks.', pulls: '8K+', tags: ['14B'], updated: 'Recent', released: '2024-12' },
-    { name: 'krith/mistral-nemo-instruct-2407-abliterated', description: 'Mistral Nemo 12B — multilingual powerhouse.', pulls: '5K+', tags: ['IQ4_XS', 'IQ3_M'], updated: 'Popular', released: '2024-07' },
+    // ── HOT: Hermes 3 ──
+    { name: 'Hermes 3 Llama 3.2 3B', description: 'NousResearch Hermes 3 — uncensored + native tool calling. Lightweight.', pulls: '500K+', tags: ['3B', 'Q4_K_M', '2 GB'], updated: 'Hot', hot: true, agent: true, released: '2024-08', downloadUrl: HF('bartowski/Hermes-3-Llama-3.2-3B-GGUF', 'Hermes-3-Llama-3.2-3B-Q4_K_M.gguf'), filename: 'Hermes-3-Llama-3.2-3B-Q4_K_M.gguf', sizeGB: 2 },
+    { name: 'Hermes 3 Llama 3.1 8B', description: 'NousResearch Hermes 3 — uncensored + native tool calling. THE agent model.', pulls: '500K+', tags: ['8B', 'Q4_K_M', '5 GB'], updated: 'Hot', hot: true, agent: true, released: '2024-08', downloadUrl: HF('bartowski/Hermes-3-Llama-3.1-8B-GGUF', 'Hermes-3-Llama-3.1-8B-Q4_K_M.gguf'), filename: 'Hermes-3-Llama-3.1-8B-Q4_K_M.gguf', sizeGB: 5 },
+    { name: 'Hermes 3 Llama 3.1 70B', description: 'NousResearch Hermes 3 70B — maximum intelligence, uncensored.', pulls: '500K+', tags: ['70B', 'Q4_K_M', '42 GB'], updated: 'Hot', hot: true, agent: true, released: '2024-08', downloadUrl: HF('bartowski/Hermes-3-Llama-3.1-70B-GGUF', 'Hermes-3-Llama-3.1-70B-Q4_K_M.gguf'), filename: 'Hermes-3-Llama-3.1-70B-Q4_K_M.gguf', sizeGB: 42 },
+    // ── HOT: Dolphin 3 ──
+    { name: 'Dolphin 3 Llama 3.1 8B', description: 'Dolphin 3 — uncensored from training. Coding, math, general purpose.', pulls: '3.7M', tags: ['8B', 'Q4_K_M', '5 GB'], updated: 'Hot', hot: true, released: '2024-12', downloadUrl: HF('bartowski/dolphin-2.9.4-llama3.1-8b-GGUF', 'dolphin-2.9.4-llama3.1-8b-Q4_K_M.gguf'), filename: 'dolphin-2.9.4-llama3.1-8b-Q4_K_M.gguf', sizeGB: 5 },
+    // ── HOT: Qwen 3.5 Abliterated ──
+    { name: 'Qwen 3.5 9B Abliterated', description: 'Qwen 3.5 abliterated — newest, strongest reasoning + coding.', pulls: '10K+', tags: ['9B', 'Q4_K_M', '6 GB'], updated: 'Hot', hot: true, released: '2026-03', downloadUrl: HF('mradermacher/Qwen3.5-9B-abliterated-GGUF', 'Qwen3.5-9B-abliterated.Q4_K_M.gguf'), filename: 'Qwen3.5-9B-abliterated.Q4_K_M.gguf', sizeGB: 5 },
+    // ── HOT: GPT-OSS Abliterated ──
+    { name: 'GPT-OSS 20B Abliterated', description: 'OpenAI GPT-OSS — abliterated open-source GPT model.', pulls: '15K+', tags: ['20B', 'Q4_K_M', '13 GB'], updated: 'Hot', hot: true, released: '2026-03', downloadUrl: HF('bartowski/huihui-ai_Huihui-gpt-oss-20b-BF16-abliterated-GGUF', 'huihui-ai_Huihui-gpt-oss-20b-BF16-abliterated-Q4_K_M.gguf'), filename: 'huihui-ai_Huihui-gpt-oss-20b-BF16-abliterated-Q4_K_M.gguf', sizeGB: 13 },
+    // ── HOT: Qwen 3.5 Abliterated (larger variants) ──
+    { name: 'Qwen 3.5 27B Abliterated', description: 'Qwen 3.5 27B abliterated — Claude Opus-style, strongest reasoning.', pulls: '20K+', tags: ['27B', 'Q4_K_M', '16 GB'], updated: 'Hot', hot: true, released: '2026-03', downloadUrl: HF('mradermacher/Huihui-Qwen3.5-27B-Claude-4.6-Opus-abliterated-GGUF', 'Huihui-Qwen3.5-27B-Claude-4.6-Opus-abliterated.Q4_K_M.gguf'), filename: 'Huihui-Qwen3.5-27B-Claude-4.6-Opus-abliterated.Q4_K_M.gguf', sizeGB: 16 },
+    { name: 'Qwen 3.5 35B MoE Abliterated', description: 'Qwen 3.5 35B MoE abliterated — best agentic, 256K context.', pulls: '26K+', tags: ['35B MoE', 'Q4_K_M', '22 GB'], updated: 'Hot', hot: true, agent: true, released: '2026-03', downloadUrl: HF('mradermacher/Huihui-Qwen3.5-35B-A3B-abliterated-i1-GGUF', 'Huihui-Qwen3.5-35B-A3B-abliterated.i1-Q4_K_M.gguf'), filename: 'Huihui-Qwen3.5-35B-A3B-abliterated.i1-Q4_K_M.gguf', sizeGB: 22 },
+    // ── HOT: Qwen3-Coder Abliterated ──
+    { name: 'Qwen3-Coder 30B Abliterated', description: 'Qwen3-Coder abliterated — 30B MoE (3B active), built for code agents. 256K context.', pulls: '10K+', tags: ['30B MoE', 'Q4_K_M', '19 GB'], updated: 'Hot', hot: true, agent: true, released: '2026-02', downloadUrl: HF('mradermacher/Huihui-Qwen3-Coder-30B-A3B-Instruct-abliterated-i1-GGUF', 'Huihui-Qwen3-Coder-30B-A3B-Instruct-abliterated.i1-Q4_K_M.gguf'), filename: 'Huihui-Qwen3-Coder-30B-A3B-Instruct-abliterated.i1-Q4_K_M.gguf', sizeGB: 19 },
+    // ── HOT: Gemma 4 Uncensored Variants ──
+    { name: 'Gemma 4 31B Uncensored', description: 'Gemma 4 31B uncensored — frontier dense model, native tool calling + vision. 256K context.', pulls: '400+', tags: ['31B', 'Q4_K_M', '17 GB'], updated: 'Hot', hot: true, agent: true, released: '2026-04', downloadUrl: HF('TrevorJS/gemma-4-31B-it-uncensored-GGUF', 'gemma-4-31B-it-uncensored-Q4_K_M.gguf'), filename: 'gemma-4-31B-it-uncensored-Q4_K_M.gguf', sizeGB: 17 },
+    { name: 'Gemma 4 26B MoE Heretic', description: 'Gemma 4 26B MoE HERETIC — 26B brain, 4B active. Uncensored + tools + vision.', pulls: '43K+', tags: ['26B MoE', 'Q4_K_M', '16 GB'], updated: 'Hot', hot: true, agent: true, released: '2026-04', downloadUrl: HF('nohurry/gemma-4-26B-A4B-it-heretic-GUFF', 'gemma-4-26b-a4b-it-heretic.q4_k_m.gguf'), filename: 'gemma-4-26b-a4b-it-heretic.q4_k_m.gguf', sizeGB: 16 },
+    { name: 'Gemma 4 31B Heretic', description: 'Gemma 4 31B HERETIC — full uncensor, native tool calling, 256K context.', pulls: '32K+', tags: ['31B', 'Q4_K_M', '17 GB'], updated: 'Hot', hot: true, agent: true, released: '2026-04', downloadUrl: HF('llmfan46/gemma-4-31B-it-uncensored-heretic-GGUF', 'gemma-4-31B-it-uncensored-heretic-Q4_K_M.gguf'), filename: 'gemma-4-31B-it-uncensored-heretic-Q4_K_M.gguf', sizeGB: 17 },
+    { name: 'Gemma 4 31B Abliterated', description: 'Gemma 4 31B abliterated — strong reasoning, Apache 2.0.', pulls: '7K+', tags: ['31B', 'Q4_K_M', '17 GB'], updated: 'New', hot: true, agent: true, released: '2026-04', downloadUrl: HF('LiconStudio/Gemma-4-31B-it-abliterated-GGUF', 'gemma-4-31B-it-abliterated-Q4_K_M.gguf'), filename: 'gemma-4-31B-it-abliterated-Q4_K_M.gguf', sizeGB: 17 },
+    // ── Popular: Qwen3 Abliterated ──
+    { name: 'Qwen3 8B Abliterated', description: 'Qwen3 abliterated — best overall. Exceptional reasoning, coding, multilingual.', pulls: '30K+', tags: ['8B', 'Q4_K_M', '5 GB'], updated: 'Popular', released: '2025-05', downloadUrl: HF('mradermacher/Qwen3-8B-abliterated-GGUF', 'Qwen3-8B-abliterated.Q4_K_M.gguf'), filename: 'Qwen3-8B-abliterated.Q4_K_M.gguf', sizeGB: 5 },
+    { name: 'Qwen3 30B MoE Abliterated', description: 'Qwen3 30B MoE abliterated — powerful, runs like 3B active.', pulls: '30K+', tags: ['30B MoE', 'Q4_K_M', '19 GB'], updated: 'Popular', agent: true, released: '2025-05', downloadUrl: HF('mradermacher/Qwen3-30B-A3B-abliterated-GGUF', 'Qwen3-30B-A3B-abliterated.Q4_K_M.gguf'), filename: 'Qwen3-30B-A3B-abliterated.Q4_K_M.gguf', sizeGB: 19 },
+    // ── Popular: Llama 3.1 8B Abliterated (two quants) ──
+    { name: 'Llama 3.1 8B Abliterated Q5', description: 'Llama 3.1 8B abliterated — fast, reliable, great entry point. Higher quality quant.', pulls: '200K+', tags: ['8B', 'Q5_K_M', '6 GB'], updated: 'Popular', agent: true, released: '2024-07', downloadUrl: HF('bartowski/Meta-Llama-3.1-8B-Instruct-abliterated-GGUF', 'Meta-Llama-3.1-8B-Instruct-abliterated-Q5_K_M.gguf'), filename: 'Meta-Llama-3.1-8B-Instruct-abliterated-Q5_K_M.gguf', sizeGB: 6 },
+    { name: 'Llama 3.1 8B Abliterated Q4', description: 'Llama 3.1 8B abliterated — fast, reliable, great entry point. Smaller quant.', pulls: '200K+', tags: ['8B', 'Q4_K_M', '5 GB'], updated: 'Popular', agent: true, released: '2024-07', downloadUrl: HF('bartowski/Meta-Llama-3.1-8B-Instruct-abliterated-GGUF', 'Meta-Llama-3.1-8B-Instruct-abliterated-Q4_K_M.gguf'), filename: 'Meta-Llama-3.1-8B-Instruct-abliterated-Q4_K_M.gguf', sizeGB: 5 },
+    // ── Popular: DeepSeek R1 Abliterated ──
+    { name: 'DeepSeek R1 8B Abliterated', description: 'DeepSeek R1 abliterated 8B — chain-of-thought reasoning.', pulls: '40K+', tags: ['8B', 'Q4_K_M', '5 GB'], updated: 'Popular', released: '2025-01', downloadUrl: HF('mradermacher/DeepSeek-R1-Distill-Qwen-7B-abliterated-v2-GGUF', 'DeepSeek-R1-Distill-Qwen-7B-abliterated-v2.Q4_K_M.gguf'), filename: 'DeepSeek-R1-Distill-Qwen-7B-abliterated-v2.Q4_K_M.gguf', sizeGB: 5 },
+    { name: 'DeepSeek R1 14B Abliterated', description: 'DeepSeek R1 abliterated 14B — stronger reasoning.', pulls: '40K+', tags: ['14B', 'Q4_K_M', '9 GB'], updated: 'Popular', released: '2025-01', downloadUrl: HF('QuantFactory/DeepSeek-R1-Distill-Qwen-14B-abliterated-v2-GGUF', 'DeepSeek-R1-Distill-Qwen-14B-abliterated-v2.Q4_K_M.gguf'), filename: 'DeepSeek-R1-Distill-Qwen-14B-abliterated-v2.Q4_K_M.gguf', sizeGB: 9 },
+    { name: 'DeepSeek R1 32B Abliterated', description: 'DeepSeek R1 abliterated 32B — powerful reasoning.', pulls: '40K+', tags: ['32B', 'Q4_K_M', '19 GB'], updated: 'Popular', released: '2025-01', downloadUrl: HF('bartowski/DeepSeek-R1-Distill-Qwen-32B-abliterated-GGUF', 'DeepSeek-R1-Distill-Qwen-32B-abliterated-Q4_K_M.gguf'), filename: 'DeepSeek-R1-Distill-Qwen-32B-abliterated-Q4_K_M.gguf', sizeGB: 19 },
+    { name: 'DeepSeek R1 70B Abliterated', description: 'DeepSeek R1 abliterated 70B — maximum reasoning for high-VRAM setups.', pulls: '40K+', tags: ['70B', 'Q4_K_M', '42 GB'], updated: 'Popular', released: '2025-01', downloadUrl: HF('bartowski/huihui-ai_DeepSeek-R1-Distill-Llama-70B-abliterated-GGUF', 'huihui-ai_DeepSeek-R1-Distill-Llama-70B-abliterated-Q4_K_M.gguf'), filename: 'huihui-ai_DeepSeek-R1-Distill-Llama-70B-abliterated-Q4_K_M.gguf', sizeGB: 42 },
+    // ── Popular: GLM 4.6 Abliterated ──
+    { name: 'GLM 4 9B Abliterated', description: 'GLM 4 9B abliterated — strong coding and reasoning.', pulls: '5K+', tags: ['9B', 'Q4_K_M', '5 GB'], updated: 'New', released: '2026-03', downloadUrl: HF('bartowski/glm-4-9b-chat-abliterated-GGUF', 'glm-4-9b-chat-abliterated-Q4_K_M.gguf'), filename: 'glm-4-9b-chat-abliterated-Q4_K_M.gguf', sizeGB: 5 },
+    // ── Popular: Gemma 3 Abliterated ──
+    { name: 'Gemma 3 4B Abliterated', description: 'Google Gemma 3 4B abliterated — lightweight, vision support.', pulls: '20K+', tags: ['4B', 'Q4_K_M', '3 GB'], updated: 'Popular', released: '2025-03', downloadUrl: HF('bartowski/mlabonne_gemma-3-4b-it-abliterated-GGUF', 'mlabonne_gemma-3-4b-it-abliterated-Q4_K_M.gguf'), filename: 'mlabonne_gemma-3-4b-it-abliterated-Q4_K_M.gguf', sizeGB: 3 },
+    { name: 'Gemma 3 12B Abliterated', description: 'Google Gemma 3 12B abliterated — vision support, great quality.', pulls: '20K+', tags: ['12B', 'Q4_K_M', '8 GB'], updated: 'Popular', released: '2025-03', downloadUrl: HF('bartowski/mlabonne_gemma-3-12b-it-abliterated-GGUF', 'mlabonne_gemma-3-12b-it-abliterated-Q4_K_M.gguf'), filename: 'mlabonne_gemma-3-12b-it-abliterated-Q4_K_M.gguf', sizeGB: 8 },
+    { name: 'Gemma 3 27B Abliterated', description: 'Google Gemma 3 27B abliterated — strong reasoning + vision.', pulls: '20K+', tags: ['27B', 'Q4_K_M', '17 GB'], updated: 'Popular', released: '2025-03', downloadUrl: HF('bartowski/mlabonne_gemma-3-27b-it-abliterated-GGUF', 'mlabonne_gemma-3-27b-it-abliterated-Q4_K_M.gguf'), filename: 'mlabonne_gemma-3-27b-it-abliterated-Q4_K_M.gguf', sizeGB: 17 },
+    // ── Popular: Qwen3 14B Abliterated (two quants) ──
+    { name: 'Qwen3 14B Abliterated Q4', description: 'Qwen3 14B abliterated — sweet spot of speed and intelligence.', pulls: '4K+', tags: ['14B', 'Q4_K_M', '9 GB'], updated: 'Recent', released: '2025-05', downloadUrl: HF('bartowski/huihui-ai_Qwen3-14B-abliterated-GGUF', 'huihui-ai_Qwen3-14B-abliterated-Q4_K_M.gguf'), filename: 'huihui-ai_Qwen3-14B-abliterated-Q4_K_M.gguf', sizeGB: 9 },
+    { name: 'Qwen3 14B Abliterated Q5', description: 'Qwen3 14B abliterated — higher quality quant.', pulls: '4K+', tags: ['14B', 'Q5_K_M', '10 GB'], updated: 'Recent', released: '2025-05', downloadUrl: HF('bartowski/huihui-ai_Qwen3-14B-abliterated-GGUF', 'huihui-ai_Qwen3-14B-abliterated-Q5_K_M.gguf'), filename: 'huihui-ai_Qwen3-14B-abliterated-Q5_K_M.gguf', sizeGB: 10 },
+    // ── Popular: Qwen 2.5 Abliterated ──
+    { name: 'Qwen 2.5 7B Abliterated', description: 'Qwen 2.5 7B abliterated — proven and reliable.', pulls: '50K+', tags: ['7B', 'Q4_K_M', '5 GB'], updated: 'Popular', agent: true, released: '2024-09', downloadUrl: HF('QuantFactory/Qwen2.5-7B-Instruct-abliterated-v2-GGUF', 'Qwen2.5-7B-Instruct-abliterated-v2.Q4_K_M.gguf'), filename: 'Qwen2.5-7B-Instruct-abliterated-v2.Q4_K_M.gguf', sizeGB: 5 },
+    { name: 'Qwen 2.5 14B Abliterated', description: 'Qwen 2.5 14B abliterated — stronger reasoning.', pulls: '50K+', tags: ['14B', 'Q4_K_M', '9 GB'], updated: 'Popular', agent: true, released: '2024-09', downloadUrl: HF('mradermacher/Qwen2.5-14B-Instruct-abliterated-GGUF', 'Qwen2.5-14B-Instruct-abliterated.Q4_K_M.gguf'), filename: 'Qwen2.5-14B-Instruct-abliterated.Q4_K_M.gguf', sizeGB: 9 },
+    { name: 'Qwen 2.5 32B Abliterated', description: 'Qwen 2.5 32B abliterated — powerful.', pulls: '50K+', tags: ['32B', 'Q4_K_M', '19 GB'], updated: 'Popular', agent: true, released: '2024-09', downloadUrl: HF('RichardErkhov/huihui-ai_-_Qwen2.5-32B-Instruct-abliterated-gguf', 'Qwen2.5-32B-Instruct-abliterated.Q4_K_M.gguf'), filename: 'Qwen2.5-32B-Instruct-abliterated.Q4_K_M.gguf', sizeGB: 19 },
+    // ── Popular: Single-size uncensored ──
+    { name: 'Llama 3.3 70B Abliterated', description: 'Llama 3.3 70B abliterated — maximum intelligence for high-VRAM setups.', pulls: '15K+', tags: ['70B', 'Q4_K_M', '42 GB'], updated: 'Popular', agent: true, released: '2024-12', downloadUrl: HF('bartowski/Llama-3.3-70B-Instruct-abliterated-GGUF', 'Llama-3.3-70B-Instruct-abliterated-Q4_K_M.gguf'), filename: 'Llama-3.3-70B-Instruct-abliterated-Q4_K_M.gguf', sizeGB: 42 },
+    { name: 'Mistral Small 24B Abliterated', description: 'Mistral Small 24B abliterated — powerful, strong multilingual.', pulls: '10K+', tags: ['24B', 'Q4_K_M', '14 GB'], updated: 'Recent', agent: true, released: '2024-09', downloadUrl: HF('bartowski/huihui-ai_Mistral-Small-24B-Instruct-2501-abliterated-GGUF', 'huihui-ai_Mistral-Small-24B-Instruct-2501-abliterated-Q4_K_M.gguf'), filename: 'huihui-ai_Mistral-Small-24B-Instruct-2501-abliterated-Q4_K_M.gguf', sizeGB: 14 },
+    { name: 'Phi-4 14B Abliterated', description: 'Microsoft Phi-4 abliterated — excellent at math, logic, structured tasks.', pulls: '8K+', tags: ['14B', 'Q4_K_M', '8 GB'], updated: 'Recent', released: '2024-12', downloadUrl: HF('mradermacher/phi-4-abliterated-GGUF', 'phi-4-abliterated.Q4_K_M.gguf'), filename: 'phi-4-abliterated.Q4_K_M.gguf', sizeGB: 8 },
+    { name: 'Mistral Nemo 12B Abliterated', description: 'Mistral Nemo 12B abliterated — multilingual powerhouse.', pulls: '5K+', tags: ['12B', 'Q4_K_M', '7 GB'], updated: 'Popular', released: '2024-07', downloadUrl: HF('QuantFactory/Mistral-Nemo-Instruct-2407-abliterated-GGUF', 'Mistral-Nemo-Instruct-2407-abliterated.Q4_K_M.gguf'), filename: 'Mistral-Nemo-Instruct-2407-abliterated.Q4_K_M.gguf', sizeGB: 7 },
   ])
 }
 
-/** Mainstream models — not uncensored but excellent for specific tasks */
+/** Mainstream GGUF models — not uncensored but excellent for specific tasks. All URLs verified. */
 export function getMainstreamTextModels(): DiscoverModel[] {
   return sortByRelease([
-    { name: 'gemma4', description: 'Google Gemma 4 — native tool calling + vision. 128-256K context. Apache 2.0.', pulls: '100K+', tags: ['e2b', 'e4b', '26B', '31B'], updated: 'New', hot: true, agent: true, released: '2026-04' },
-    { name: 'qwen3-coder', description: 'Qwen3-Coder — 30B MoE coding agent (3B active). Native tool calling, 256K context.', pulls: '100K+', tags: ['30B', '480B'], updated: 'New', hot: true, agent: true, released: '2026-02' },
-    { name: 'qwen3-coder-next', description: 'Qwen3-Coder-Next — 80B MoE (3B active). Optimized for agentic coding workflows.', pulls: '10K+', tags: ['Q4_K_M', 'Q8_0'], updated: 'New', hot: true, agent: true, released: '2026-03' },
-    { name: 'qwen3', description: 'Qwen 3 — top-tier reasoning and coding. Thinking mode support.', pulls: '5M+', tags: ['8B', '14B', '32B'], updated: 'Popular', agent: true, released: '2025-05' },
-    { name: 'llama4', description: 'Meta Llama 4 — latest generation MoE. Needs 64GB+ RAM.', pulls: '1M+', tags: ['scout', 'maverick'], updated: 'New', agent: true, released: '2025-04' },
-    { name: 'deepseek-r1', description: 'DeepSeek R1 — chain-of-thought reasoning model. Shows its thinking.', pulls: '2M+', tags: ['8B', '14B', '32B', '70B'], updated: 'Popular', released: '2025-01' },
-    { name: 'phi4', description: 'Microsoft Phi 4 — excellent math, logic, structured tasks.', pulls: '500K+', tags: ['14B'], updated: 'Popular', agent: true, released: '2024-12' },
-    { name: 'mistral-small', description: 'Mistral Small — fast, multilingual, native tool calling.', pulls: '300K+', tags: ['24B'], updated: 'Popular', agent: true, released: '2024-09' },
+    // ── Gemma 4 (April 2026) ──
+    { name: 'Gemma 4 31B', description: 'Google Gemma 4 31B — frontier dense model, native tools + vision. 256K context.', pulls: '100K+', tags: ['31B', 'Q4_K_M', '17 GB'], updated: 'Hot', hot: true, agent: true, released: '2026-04', downloadUrl: HF('unsloth/gemma-4-31B-it-GGUF', 'gemma-4-31B-it-Q4_K_M.gguf'), filename: 'gemma-4-31B-it-Q4_K_M.gguf', sizeGB: 17 },
+    { name: 'Gemma 4 26B MoE', description: 'Gemma 4 26B MoE — 26B brain, runs like 4B. Tools + vision. Apache 2.0.', pulls: '100K+', tags: ['26B', 'Q4_K_XL', '16 GB'], updated: 'Hot', hot: true, agent: true, released: '2026-04', downloadUrl: HF('unsloth/gemma-4-26B-A4B-it-GGUF', 'gemma-4-26B-A4B-it-UD-Q4_K_XL.gguf'), filename: 'gemma-4-26B-A4B-it-UD-Q4_K_XL.gguf', sizeGB: 16 },
+    { name: 'Gemma 4 E4B', description: 'Gemma 4 E4B — lightweight 4.5B, great for small GPUs.', pulls: '100K+', tags: ['4.5B', 'Q4_K_M', '5 GB'], updated: 'Hot', hot: true, released: '2026-04', downloadUrl: HF('unsloth/gemma-4-E4B-it-GGUF', 'gemma-4-E4B-it-Q4_K_M.gguf'), filename: 'gemma-4-E4B-it-Q4_K_M.gguf', sizeGB: 5 },
+    { name: 'Gemma 4 E2B', description: 'Gemma 4 E2B — ultra-light 2.3B, runs on anything.', pulls: '100K+', tags: ['2.3B', 'Q4_K_M', '3 GB'], updated: 'New', released: '2026-04', downloadUrl: HF('unsloth/gemma-4-E2B-it-GGUF', 'gemma-4-E2B-it-Q4_K_M.gguf'), filename: 'gemma-4-E2B-it-Q4_K_M.gguf', sizeGB: 3 },
+    // ── Qwen 3.5 (March 2026) ──
+    { name: 'Qwen 3.5 35B MoE', description: 'Qwen 3.5 35B MoE — best agentic, 256K context. SWE-bench leader.', pulls: '100K+', tags: ['35B', 'Q4_K_M', '21 GB'], updated: 'Hot', hot: true, agent: true, released: '2026-03', downloadUrl: HF('unsloth/Qwen3.5-35B-A3B-GGUF', 'Qwen3.5-35B-A3B-Q4_K_M.gguf'), filename: 'Qwen3.5-35B-A3B-Q4_K_M.gguf', sizeGB: 21 },
+    { name: 'Qwen 3.5 27B', description: 'Qwen 3.5 27B dense — strongest reasoning + coding.', pulls: '100K+', tags: ['27B', 'Q4_K_M', '16 GB'], updated: 'Hot', hot: true, released: '2026-03', downloadUrl: HF('unsloth/Qwen3.5-27B-GGUF', 'Qwen3.5-27B-Q4_K_M.gguf'), filename: 'Qwen3.5-27B-Q4_K_M.gguf', sizeGB: 16 },
+    { name: 'Qwen 3.5 9B', description: 'Qwen 3.5 9B — excellent balance of speed and quality.', pulls: '100K+', tags: ['9B', 'Q4_K_M', '5 GB'], updated: 'New', released: '2026-03', downloadUrl: HF('unsloth/Qwen3.5-9B-GGUF', 'Qwen3.5-9B-Q4_K_M.gguf'), filename: 'Qwen3.5-9B-Q4_K_M.gguf', sizeGB: 5 },
+    // ── GPT-OSS (March 2026) ──
+    { name: 'GPT-OSS 20B', description: 'OpenAI GPT-OSS — open-source GPT model, strong all-rounder.', pulls: '100K+', tags: ['20B', 'Q4_K_M', '11 GB'], updated: 'Hot', hot: true, released: '2026-03', downloadUrl: HF('unsloth/gpt-oss-20b-GGUF', 'gpt-oss-20b-Q4_K_M.gguf'), filename: 'gpt-oss-20b-Q4_K_M.gguf', sizeGB: 11 },
+    // ── Qwen3-Coder (Feb-March 2026) ──
+    { name: 'Qwen3-Coder 30B', description: 'Qwen3-Coder — 30B MoE coding agent (3B active). Native tool calling, 256K context.', pulls: '100K+', tags: ['30B MoE', 'Q4_K_M', '17 GB'], updated: 'New', hot: true, agent: true, released: '2026-02', downloadUrl: HF('unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF', 'Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf'), filename: 'Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf', sizeGB: 17 },
+    { name: 'Qwen3-Coder-Next', description: 'Qwen3-Coder-Next — 80B MoE, optimized for agentic coding.', pulls: '10K+', tags: ['80B MoE', 'Q4_K_M', '45 GB'], updated: 'Hot', hot: true, agent: true, released: '2026-03', downloadUrl: HF('unsloth/Qwen3-Coder-Next-GGUF', 'Qwen3-Coder-Next-Q4_K_M.gguf'), filename: 'Qwen3-Coder-Next-Q4_K_M.gguf', sizeGB: 45 },
+    // ── DeepSeek R1 (Jan-Jun 2025) ──
+    { name: 'DeepSeek R1 Qwen3 8B', description: 'DeepSeek R1 distilled into Qwen3 8B — chain-of-thought reasoning.', pulls: '2M+', tags: ['8B', 'Q4_K_M', '5 GB'], updated: 'Popular', released: '2025-06', downloadUrl: HF('unsloth/DeepSeek-R1-0528-Qwen3-8B-GGUF', 'DeepSeek-R1-0528-Qwen3-8B-Q4_K_M.gguf'), filename: 'DeepSeek-R1-0528-Qwen3-8B-Q4_K_M.gguf', sizeGB: 5 },
+    { name: 'DeepSeek R1 Qwen 14B', description: 'DeepSeek R1 distilled into Qwen 14B — stronger reasoning.', pulls: '2M+', tags: ['14B', 'Q4_K_M', '9 GB'], updated: 'Popular', released: '2025-01', downloadUrl: HF('unsloth/DeepSeek-R1-Distill-Qwen-14B-GGUF', 'DeepSeek-R1-Distill-Qwen-14B-Q4_K_M.gguf'), filename: 'DeepSeek-R1-Distill-Qwen-14B-Q4_K_M.gguf', sizeGB: 9 },
+    { name: 'DeepSeek R1 Qwen 32B', description: 'DeepSeek R1 distilled into Qwen 32B — powerful reasoning.', pulls: '2M+', tags: ['32B', 'Q4_K_M', '19 GB'], updated: 'Popular', released: '2025-01', downloadUrl: HF('unsloth/DeepSeek-R1-Distill-Qwen-32B-GGUF', 'DeepSeek-R1-Distill-Qwen-32B-Q4_K_M.gguf'), filename: 'DeepSeek-R1-Distill-Qwen-32B-Q4_K_M.gguf', sizeGB: 19 },
+    { name: 'DeepSeek R1 Llama 70B', description: 'DeepSeek R1 distilled into Llama 70B — maximum reasoning.', pulls: '2M+', tags: ['70B', 'Q4_K_M', '42 GB'], updated: 'Popular', released: '2025-01', downloadUrl: HF('unsloth/DeepSeek-R1-Distill-Llama-70B-GGUF', 'DeepSeek-R1-Distill-Llama-70B-Q4_K_M.gguf'), filename: 'DeepSeek-R1-Distill-Llama-70B-Q4_K_M.gguf', sizeGB: 42 },
+    // ── Qwen 3 (May 2025) ──
+    { name: 'Qwen 3 4B', description: 'Qwen 3 4B — fast, lightweight, solid for small GPUs.', pulls: '5M+', tags: ['4B', 'Q4_K_M', '3 GB'], updated: 'Popular', released: '2025-05', downloadUrl: HF('unsloth/Qwen3-4B-GGUF', 'Qwen3-4B-Q4_K_M.gguf'), filename: 'Qwen3-4B-Q4_K_M.gguf', sizeGB: 3 },
+    { name: 'Qwen 3 8B', description: 'Qwen 3 8B — top-tier reasoning and coding. Thinking mode.', pulls: '5M+', tags: ['8B', 'Q4_K_M', '5 GB'], updated: 'Popular', agent: true, released: '2025-05', downloadUrl: HF('unsloth/Qwen3-8B-GGUF', 'Qwen3-8B-Q4_K_M.gguf'), filename: 'Qwen3-8B-Q4_K_M.gguf', sizeGB: 5 },
+    { name: 'Qwen 3 14B', description: 'Qwen 3 14B — sweet spot of speed and quality.', pulls: '5M+', tags: ['14B', 'Q4_K_M', '9 GB'], updated: 'Popular', agent: true, released: '2025-05', downloadUrl: HF('unsloth/Qwen3-14B-GGUF', 'Qwen3-14B-Q4_K_M.gguf'), filename: 'Qwen3-14B-Q4_K_M.gguf', sizeGB: 9 },
+    { name: 'Qwen 3 32B', description: 'Qwen 3 32B — powerful reasoning and coding.', pulls: '5M+', tags: ['32B', 'Q4_K_XL', '20 GB'], updated: 'Popular', agent: true, released: '2025-05', downloadUrl: HF('unsloth/Qwen3-32B-GGUF', 'Qwen3-32B-UD-Q4_K_XL.gguf'), filename: 'Qwen3-32B-UD-Q4_K_XL.gguf', sizeGB: 20 },
+    // ── Llama 4 (April 2025) ──
+    { name: 'Llama 4 Scout', description: 'Meta Llama 4 Scout — 16x17B MoE. Massive context window.', pulls: '1M+', tags: ['Scout', 'Q2_K_XL', '40 GB'], updated: 'New', agent: true, released: '2025-04', downloadUrl: HF('unsloth/Llama-4-Scout-17B-16E-Instruct-GGUF', 'Llama-4-Scout-17B-16E-Instruct-UD-Q2_K_XL.gguf'), filename: 'Llama-4-Scout-17B-16E-Instruct-UD-Q2_K_XL.gguf', sizeGB: 40 },
+    // ── Gemma 3 (March 2025) ──
+    { name: 'Gemma 3 12B', description: 'Google Gemma 3 12B — vision support, great quality.', pulls: '100K+', tags: ['12B', 'Q4_K_M', '8 GB'], updated: 'Popular', released: '2025-03', downloadUrl: HF('unsloth/gemma-3-12b-it-GGUF', 'gemma-3-12b-it-Q4_K_M.gguf'), filename: 'gemma-3-12b-it-Q4_K_M.gguf', sizeGB: 8 },
+    { name: 'Gemma 3 27B', description: 'Google Gemma 3 27B — strong reasoning + vision.', pulls: '100K+', tags: ['27B', 'Q4_K_M', '17 GB'], updated: 'Popular', released: '2025-03', downloadUrl: HF('unsloth/gemma-3-27b-it-GGUF', 'gemma-3-27b-it-Q4_K_M.gguf'), filename: 'gemma-3-27b-it-Q4_K_M.gguf', sizeGB: 17 },
+    // ── Phi 4 (Dec 2024) ──
+    { name: 'Phi-4 14B', description: 'Microsoft Phi-4 — excellent at math, logic, structured tasks.', pulls: '500K+', tags: ['14B', 'Q4_K_M', '9 GB'], updated: 'Popular', agent: true, released: '2024-12', downloadUrl: HF('bartowski/phi-4-GGUF', 'phi-4-Q4_K_M.gguf'), filename: 'phi-4-Q4_K_M.gguf', sizeGB: 9 },
+    // ── Llama 3.3 / 3.1 ──
+    { name: 'Llama 3.3 70B', description: 'Meta Llama 3.3 70B — maximum intelligence for high-end setups.', pulls: '1M+', tags: ['70B', 'Q4_K_M', '42 GB'], updated: 'Popular', released: '2024-12', downloadUrl: HF('bartowski/Llama-3.3-70B-Instruct-GGUF', 'Llama-3.3-70B-Instruct-Q4_K_M.gguf'), filename: 'Llama-3.3-70B-Instruct-Q4_K_M.gguf', sizeGB: 42 },
+    { name: 'Llama 3.1 8B', description: 'Meta Llama 3.1 8B — fast, reliable, great entry point.', pulls: '1M+', tags: ['8B', 'Q4_K_M', '5 GB'], updated: 'Popular', released: '2024-07', downloadUrl: HF('bartowski/Meta-Llama-3.1-8B-Instruct-GGUF', 'Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf'), filename: 'Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf', sizeGB: 5 },
+    // ── Mistral ──
+    { name: 'Mistral Small 24B', description: 'Mistral Small — fast, multilingual, native tool calling.', pulls: '300K+', tags: ['24B', 'Q4_K_M', '14 GB'], updated: 'Popular', agent: true, released: '2024-09', downloadUrl: HF('bartowski/Mistral-Small-24B-Instruct-2501-GGUF', 'Mistral-Small-24B-Instruct-2501-Q4_K_M.gguf'), filename: 'Mistral-Small-24B-Instruct-2501-Q4_K_M.gguf', sizeGB: 14 },
+    { name: 'Mistral Nemo 12B', description: 'Mistral Nemo 12B — multilingual powerhouse.', pulls: '300K+', tags: ['12B', 'Q4_K_M', '7 GB'], updated: 'Popular', released: '2024-07', downloadUrl: HF('bartowski/Mistral-Nemo-Instruct-2407-GGUF', 'Mistral-Nemo-Instruct-2407-Q4_K_M.gguf'), filename: 'Mistral-Nemo-Instruct-2407-Q4_K_M.gguf', sizeGB: 7 },
+    // ── Qwen 2.5 ──
+    { name: 'Qwen 2.5 7B', description: 'Qwen 2.5 7B — proven and reliable all-rounder.', pulls: '100K+', tags: ['7B', 'Q4_K_M', '5 GB'], updated: 'Popular', released: '2024-09', downloadUrl: HF('bartowski/Qwen2.5-7B-Instruct-GGUF', 'Qwen2.5-7B-Instruct-Q4_K_M.gguf'), filename: 'Qwen2.5-7B-Instruct-Q4_K_M.gguf', sizeGB: 5 },
   ])
-}
-
-/** Combined curated list for search fallback — uncensored first */
-function getCuratedTextModels(): DiscoverModel[] {
-  return [...getUncensoredTextModels(), ...getMainstreamTextModels()]
 }
 
 // ─── Multi-Provider Discovery ───
@@ -450,63 +427,6 @@ export async function getAnthropicModels(): Promise<DiscoverModel[]> {
   } catch {
     return []
   }
-}
-
-// ─── HuggingFace GGUF Discovery ───
-
-const HF = (repo: string, file: string) => `https://huggingface.co/${repo}/resolve/main/${file}`
-
-/** Uncensored GGUF models from HuggingFace */
-export function getHuggingFaceUncensoredModels(): DiscoverModel[] {
-  return sortByRelease([
-    { name: 'Hermes 3 Llama 3.1 8B', description: 'NousResearch Hermes 3 — uncensored + native tool calling. THE agent model.', tags: ['8B', 'Q4_K_M', '5 GB'], updated: 'Hot', hot: true, agent: true, released: '2024-08', downloadUrl: HF('bartowski/Hermes-3-Llama-3.1-8B-GGUF', 'Hermes-3-Llama-3.1-8B-Q4_K_M.gguf'), filename: 'Hermes-3-Llama-3.1-8B-Q4_K_M.gguf', sizeGB: 5 },
-    { name: 'Dolphin 3 Llama 3.1 8B', description: 'Dolphin 3 — uncensored from training. Coding, math, general purpose.', tags: ['8B', 'Q4_K_M', '5 GB'], updated: 'Hot', hot: true, released: '2024-12', downloadUrl: HF('bartowski/dolphin-2.9.4-llama3.1-8b-GGUF', 'dolphin-2.9.4-llama3.1-8b-Q4_K_M.gguf'), filename: 'dolphin-2.9.4-llama3.1-8b-Q4_K_M.gguf', sizeGB: 5 },
-  ])
-}
-
-/** Mainstream GGUF models from HuggingFace — all URLs verified */
-export function getHuggingFaceMainstreamModels(): DiscoverModel[] {
-  return sortByRelease([
-    // ── Gemma 4 (April 2026) ──
-    { name: 'Gemma 4 31B', description: 'Google Gemma 4 31B — frontier dense model, native tools + vision. 256K context.', tags: ['31B', 'Q4_K_M', '20 GB'], updated: 'Hot', hot: true, agent: true, released: '2026-04', downloadUrl: HF('unsloth/gemma-4-31B-it-GGUF', 'gemma-4-31B-it-Q4_K_M.gguf'), filename: 'gemma-4-31B-it-Q4_K_M.gguf', sizeGB: 20 },
-    { name: 'Gemma 4 26B MoE', description: 'Gemma 4 26B MoE — 26B brain, runs like 4B. Tools + vision. Apache 2.0.', tags: ['26B', 'Q4_K_XL', '18 GB'], updated: 'Hot', hot: true, agent: true, released: '2026-04', downloadUrl: HF('unsloth/gemma-4-26B-A4B-it-GGUF', 'gemma-4-26B-A4B-it-UD-Q4_K_XL.gguf'), filename: 'gemma-4-26B-A4B-it-UD-Q4_K_XL.gguf', sizeGB: 18 },
-    { name: 'Gemma 4 E4B', description: 'Gemma 4 E4B — lightweight 4.5B, great for small GPUs.', tags: ['4.5B', 'Q4_K_M', '5 GB'], updated: 'Hot', hot: true, released: '2026-04', downloadUrl: HF('unsloth/gemma-4-E4B-it-GGUF', 'gemma-4-E4B-it-Q4_K_M.gguf'), filename: 'gemma-4-E4B-it-Q4_K_M.gguf', sizeGB: 5 },
-    { name: 'Gemma 4 E2B', description: 'Gemma 4 E2B — ultra-light 2.3B, runs on anything.', tags: ['2.3B', 'Q4_K_M', '3 GB'], updated: 'New', released: '2026-04', downloadUrl: HF('unsloth/gemma-4-E2B-it-GGUF', 'gemma-4-E2B-it-Q4_K_M.gguf'), filename: 'gemma-4-E2B-it-Q4_K_M.gguf', sizeGB: 3 },
-    // ── Qwen 3.5 (March 2026) ──
-    { name: 'Qwen 3.5 35B MoE', description: 'Qwen 3.5 35B MoE — best agentic, 256K context. SWE-bench leader.', tags: ['35B', 'Q4_K_M', '22 GB'], updated: 'Hot', hot: true, agent: true, released: '2026-03', downloadUrl: HF('unsloth/Qwen3.5-35B-A3B-GGUF', 'Qwen3.5-35B-A3B-Q4_K_M.gguf'), filename: 'Qwen3.5-35B-A3B-Q4_K_M.gguf', sizeGB: 22 },
-    { name: 'Qwen 3.5 27B', description: 'Qwen 3.5 27B dense — strongest reasoning + coding.', tags: ['27B', 'Q4_K_M', '17 GB'], updated: 'Hot', hot: true, released: '2026-03', downloadUrl: HF('unsloth/Qwen3.5-27B-GGUF', 'Qwen3.5-27B-Q4_K_M.gguf'), filename: 'Qwen3.5-27B-Q4_K_M.gguf', sizeGB: 17 },
-    { name: 'Qwen 3.5 9B', description: 'Qwen 3.5 9B — excellent balance of speed and quality.', tags: ['9B', 'Q4_K_M', '6 GB'], updated: 'New', released: '2026-03', downloadUrl: HF('unsloth/Qwen3.5-9B-GGUF', 'Qwen3.5-9B-Q4_K_M.gguf'), filename: 'Qwen3.5-9B-Q4_K_M.gguf', sizeGB: 6 },
-    // ── GPT-OSS (March 2026) ──
-    { name: 'GPT-OSS 20B', description: 'OpenAI GPT-OSS — open-source GPT model, strong all-rounder.', tags: ['20B', 'Q4_K_M', '13 GB'], updated: 'Hot', hot: true, released: '2026-03', downloadUrl: HF('unsloth/gpt-oss-20b-GGUF', 'gpt-oss-20b-Q4_K_M.gguf'), filename: 'gpt-oss-20b-Q4_K_M.gguf', sizeGB: 13 },
-    // ── Qwen3-Coder (March 2026) ──
-    { name: 'Qwen3-Coder-Next', description: 'Qwen3-Coder-Next — 80B MoE, optimized for agentic coding.', tags: ['80B MoE', 'Q4_K_M', '25 GB'], updated: 'Hot', hot: true, agent: true, released: '2026-03', downloadUrl: HF('unsloth/Qwen3-Coder-Next-GGUF', 'Qwen3-Coder-Next-Q4_K_M.gguf'), filename: 'Qwen3-Coder-Next-Q4_K_M.gguf', sizeGB: 25 },
-    // ── DeepSeek (Jan-Jun 2025) ──
-    { name: 'DeepSeek R1 Qwen3 8B', description: 'DeepSeek R1 distilled into Qwen3 8B — chain-of-thought reasoning.', tags: ['8B', 'Q4_K_M', '5 GB'], updated: 'Popular', released: '2025-06', downloadUrl: HF('unsloth/DeepSeek-R1-0528-Qwen3-8B-GGUF', 'DeepSeek-R1-0528-Qwen3-8B-Q4_K_M.gguf'), filename: 'DeepSeek-R1-0528-Qwen3-8B-Q4_K_M.gguf', sizeGB: 5 },
-    { name: 'DeepSeek R1 Qwen 14B', description: 'DeepSeek R1 distilled into Qwen 14B — stronger reasoning.', tags: ['14B', 'Q4_K_M', '9 GB'], updated: 'Popular', released: '2025-01', downloadUrl: HF('unsloth/DeepSeek-R1-Distill-Qwen-14B-GGUF', 'DeepSeek-R1-Distill-Qwen-14B-Q4_K_M.gguf'), filename: 'DeepSeek-R1-Distill-Qwen-14B-Q4_K_M.gguf', sizeGB: 9 },
-    // ── Qwen 3 (May 2025) ──
-    { name: 'Qwen 3 8B', description: 'Qwen 3 8B — top-tier reasoning and coding. Thinking mode.', tags: ['8B', 'Q4_K_M', '5 GB'], updated: 'Popular', agent: true, released: '2025-05', downloadUrl: HF('unsloth/Qwen3-8B-GGUF', 'Qwen3-8B-Q4_K_M.gguf'), filename: 'Qwen3-8B-Q4_K_M.gguf', sizeGB: 5 },
-    { name: 'Qwen 3 4B', description: 'Qwen 3 4B — fast, lightweight, solid for small GPUs.', tags: ['4B', 'Q4_K_M', '3 GB'], updated: 'Popular', released: '2025-05', downloadUrl: HF('unsloth/Qwen3-4B-GGUF', 'Qwen3-4B-Q4_K_M.gguf'), filename: 'Qwen3-4B-Q4_K_M.gguf', sizeGB: 3 },
-    // ── Llama 4 (April 2025) ──
-    { name: 'Llama 4 Scout', description: 'Meta Llama 4 Scout — 16x17B MoE. Massive context window.', tags: ['Scout', 'Q2_K_XL', '65 GB'], updated: 'New', agent: true, released: '2025-04', downloadUrl: HF('unsloth/Llama-4-Scout-17B-16E-Instruct-GGUF', 'Llama-4-Scout-17B-16E-Instruct-UD-Q2_K_XL.gguf'), filename: 'Llama-4-Scout-17B-16E-Instruct-UD-Q2_K_XL.gguf', sizeGB: 65 },
-    // ── Gemma 3 (March 2025) ──
-    { name: 'Gemma 3 12B', description: 'Google Gemma 3 12B — vision support, great quality.', tags: ['12B', 'Q4_K_M', '8 GB'], updated: 'Popular', released: '2025-03', downloadUrl: HF('unsloth/gemma-3-12b-it-GGUF', 'gemma-3-12b-it-Q4_K_M.gguf'), filename: 'gemma-3-12b-it-Q4_K_M.gguf', sizeGB: 8 },
-    { name: 'Gemma 3 27B', description: 'Google Gemma 3 27B — strong reasoning + vision.', tags: ['27B', 'Q4_K_M', '17 GB'], updated: 'Popular', released: '2025-03', downloadUrl: HF('unsloth/gemma-3-27b-it-GGUF', 'gemma-3-27b-it-Q4_K_M.gguf'), filename: 'gemma-3-27b-it-Q4_K_M.gguf', sizeGB: 17 },
-    // ── Phi 4 (Dec 2024) ──
-    { name: 'Phi-4 14B', description: 'Microsoft Phi-4 — excellent at math, logic, structured tasks.', tags: ['14B', 'Q4_K_M', '9 GB'], updated: 'Popular', agent: true, released: '2024-12', downloadUrl: HF('bartowski/phi-4-GGUF', 'phi-4-Q4_K_M.gguf'), filename: 'phi-4-Q4_K_M.gguf', sizeGB: 9 },
-    // ── Llama 3.3 / 3.1 ──
-    { name: 'Llama 3.3 70B', description: 'Meta Llama 3.3 70B — maximum intelligence for high-end setups.', tags: ['70B', 'Q4_K_M', '42 GB'], updated: 'Popular', released: '2024-12', downloadUrl: HF('bartowski/Llama-3.3-70B-Instruct-GGUF', 'Llama-3.3-70B-Instruct-Q4_K_M.gguf'), filename: 'Llama-3.3-70B-Instruct-Q4_K_M.gguf', sizeGB: 42 },
-    { name: 'Llama 3.1 8B', description: 'Meta Llama 3.1 8B — fast, reliable, great entry point.', tags: ['8B', 'Q4_K_M', '5 GB'], updated: 'Popular', released: '2024-07', downloadUrl: HF('bartowski/Meta-Llama-3.1-8B-Instruct-GGUF', 'Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf'), filename: 'Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf', sizeGB: 5 },
-    // ── Mistral ──
-    { name: 'Mistral Small 24B', description: 'Mistral Small — fast, multilingual, native tool calling.', tags: ['24B', 'Q4_K_M', '14 GB'], updated: 'Popular', agent: true, released: '2024-09', downloadUrl: HF('bartowski/Mistral-Small-24B-Instruct-2501-GGUF', 'Mistral-Small-24B-Instruct-2501-Q4_K_M.gguf'), filename: 'Mistral-Small-24B-Instruct-2501-Q4_K_M.gguf', sizeGB: 14 },
-    { name: 'Mistral Nemo 12B', description: 'Mistral Nemo 12B — multilingual powerhouse.', tags: ['12B', 'Q4_K_M', '7 GB'], updated: 'Popular', released: '2024-07', downloadUrl: HF('bartowski/Mistral-Nemo-Instruct-2407-GGUF', 'Mistral-Nemo-Instruct-2407-Q4_K_M.gguf'), filename: 'Mistral-Nemo-Instruct-2407-Q4_K_M.gguf', sizeGB: 7 },
-    // ── Qwen 2.5 ──
-    { name: 'Qwen 2.5 7B', description: 'Qwen 2.5 7B — proven and reliable all-rounder.', tags: ['7B', 'Q4_K_M', '5 GB'], updated: 'Popular', released: '2024-09', downloadUrl: HF('bartowski/Qwen2.5-7B-Instruct-GGUF', 'Qwen2.5-7B-Instruct-Q4_K_M.gguf'), filename: 'Qwen2.5-7B-Instruct-Q4_K_M.gguf', sizeGB: 5 },
-  ])
-}
-
-/** Combined HF models for search fallback */
-export function getHuggingFaceModels(): DiscoverModel[] {
-  return [...getHuggingFaceUncensoredModels(), ...getHuggingFaceMainstreamModels()]
 }
 
 /** Search HuggingFace for GGUF models */

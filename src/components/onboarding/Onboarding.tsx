@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Minus, Square, Copy, X as XIcon, ArrowRight, Download, Check, ChevronRight, Loader2, Pause, RefreshCw, ExternalLink, FolderOpen } from 'lucide-react'
+import { Minus, Square, Copy, X as XIcon, ArrowRight, Download, Check, ChevronRight, Loader2, RefreshCw, ExternalLink, FolderOpen } from 'lucide-react'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useProviderStore } from '../../stores/providerStore'
-import { useModels } from '../../hooks/useModels'
 import { ONBOARDING_MODELS, type OnboardingModel } from '../../lib/constants'
 import { PROVIDER_PRESETS } from '../../api/providers/types'
 import { detectLocalBackends, type DetectedBackend } from '../../lib/backend-detector'
+import { detectProviderModelPath, startModelDownloadToPath } from '../../api/discover'
+import { useDownloadStore } from '../../stores/downloadStore'
 import { ProgressBar } from '../ui/ProgressBar'
 import { openExternal } from '../../api/backend'
 import { formatBytes } from '../../lib/formatters'
@@ -45,9 +46,12 @@ export function Onboarding() {
   const [step, setStep] = useState<Step>('welcome')
   const [selectedModels, setSelectedModels] = useState<string[]>([])
   const { settings, updateSettings } = useSettingsStore()
-  const { pullModel, pausePull, isPulling, activePulls, models: installedModels } = useModels()
+  const downloads = useDownloadStore(s => s.downloads)
+  const dlStore = useDownloadStore
   const [pullingModel, setPullingModel] = useState<string | null>(null)
   const [pulledModels, setPulledModels] = useState<string[]>([])
+  const [hfModelPath, setHfModelPath] = useState<string | null>(null)
+  const [downloadError, setDownloadError] = useState<string | null>(null)
   const [detectedBackends, setDetectedBackends] = useState<DetectedBackend[]>([])
   const [detecting, setDetecting] = useState(false)
   const [selectedBackend, setSelectedBackend] = useState<string>('')
@@ -74,12 +78,31 @@ export function Onboarding() {
     )
   }
 
-  const handlePullSelected = async () => {
+  const handleDownloadSelected = async () => {
+    setDownloadError(null)
+    const providers = useProviderStore.getState().providers
+    const destDir = hfModelPath || (await detectProviderModelPath(providers.openai?.name || 'LM Studio'))
+    if (!destDir) {
+      setDownloadError('Could not determine model directory. Please check app permissions.')
+      return
+    }
+    setHfModelPath(destDir)
+
     for (const name of selectedModels) {
       if (pulledModels.includes(name)) continue
+      const model = ONBOARDING_MODELS.find(m => m.name === name)
+      if (!model?.downloadUrl || !model?.filename) continue
+
       setPullingModel(name)
-      await pullModel(name)
-      setPulledModels((prev) => [...prev, name])
+      try {
+        dlStore.getState().setMeta(model.filename, model.downloadUrl, 'gguf')
+        const expectedBytes = model.sizeGB ? Math.round(model.sizeGB * 1_073_741_824) : undefined
+        await startModelDownloadToPath(model.downloadUrl, destDir, model.filename, expectedBytes)
+        dlStore.getState().startPolling()
+        setPulledModels(prev => [...prev, name])
+      } catch (e) {
+        setDownloadError(`Download failed: ${e instanceof Error ? e.message : String(e)}`)
+      }
     }
     setPullingModel(null)
     setStep('done')
@@ -118,14 +141,14 @@ export function Onboarding() {
     }
   }, [step])
 
-  const currentPull = pullingModel ? activePulls[pullingModel] : null
-  const pullProgress = currentPull?.progress ?? null
+  // GGUF download progress from downloadStore
+  const currentModel = pullingModel ? ONBOARDING_MODELS.find(m => m.name === pullingModel) : null
+  const currentDownload = currentModel?.filename ? downloads[currentModel.filename] : null
+  const isDownloading = !!pullingModel
   const progress =
-    pullProgress?.total && pullProgress?.completed
-      ? (pullProgress.completed / pullProgress.total) * 100
+    currentDownload?.total && currentDownload?.progress
+      ? (currentDownload.progress / currentDownload.total) * 100
       : 0
-
-  const hasOllama = detectedBackends.some(b => b.id === 'ollama')
 
   // Shared button styles
   const primaryBtn = `mx-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[0.7rem] font-medium transition-all ${
@@ -498,7 +521,7 @@ export function Onboarding() {
             <div className="flex items-center justify-center gap-2 pt-1">
               {(comfyFound?.found || comfyReady) && (
                 <button
-                  onClick={() => hasOllama ? setStep('models') : setStep('done')}
+                  onClick={() => setStep('models')}
                   className={primaryBtn}
                 >
                   Continue <ArrowRight size={14} />
@@ -520,7 +543,7 @@ export function Onboarding() {
                     <RefreshCw size={12} /> Re-Scan
                   </button>
                   <button
-                    onClick={() => hasOllama ? setStep('models') : setStep('done')}
+                    onClick={() => setStep('models')}
                     className={`${secondaryBtn} opacity-60`}
                   >
                     Skip for now <ChevronRight size={12} />
@@ -559,25 +582,27 @@ export function Onboarding() {
               </button>
             </div>
 
-            {isPulling && pullingModel && (
+            {isDownloading && pullingModel && (
               <div className={`p-2.5 rounded-lg border ${cardClass}`}>
                 <div className="flex items-center justify-between mb-1">
                   <p className="text-[0.7rem]">
-                    Installing <span className="font-mono font-medium">{pullingModel}</span>...
+                    Downloading <span className="font-mono font-medium">{currentModel?.label || pullingModel}</span>...
                   </p>
-                  <button
-                    onClick={() => pullingModel && pausePull(pullingModel)}
-                    className="p-0.5 rounded hover:bg-red-500/20 text-gray-400 hover:text-red-400 transition-colors"
-                    title="Pause download"
-                  >
-                    <Pause size={12} />
-                  </button>
                 </div>
-                <p className={`text-[0.6rem] mb-1.5 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>{pullProgress?.status}</p>
-                {pullProgress?.total && pullProgress?.completed !== undefined && (
-                  <ProgressBar progress={progress} />
-                )}
+                <p className={`text-[0.6rem] mb-1.5 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>{currentDownload?.status || 'Starting...'}</p>
+                {currentDownload?.total ? (
+                  <>
+                    <ProgressBar progress={progress} />
+                    <p className={`text-[0.55rem] mt-0.5 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                      {formatBytes(currentDownload.progress)} / {formatBytes(currentDownload.total)}
+                      {progress > 0 && <span className="ml-1.5 text-blue-400">{Math.round(progress)}%</span>}
+                    </p>
+                  </>
+                ) : null}
               </div>
+            )}
+            {downloadError && (
+              <p className={`text-[0.65rem] text-red-400 text-center`}>{downloadError}</p>
             )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[50vh] overflow-y-auto scrollbar-thin pr-1">
@@ -590,19 +615,19 @@ export function Onboarding() {
                 return true
               }).map((model) => {
                 const selected = selectedModels.includes(model.name)
-                const pulled = pulledModels.includes(model.name) || installedModels.some((m) => m.name === model.name)
+                const pulled = pulledModels.includes(model.name) || (model.filename ? downloads[model.filename]?.status === 'complete' : false)
                 return (
                   <button
                     key={model.name}
-                    onClick={() => !pulled && !isPulling && toggleModel(model.name)}
-                    disabled={pulled || isPulling}
+                    onClick={() => !pulled && !isDownloading && toggleModel(model.name)}
+                    disabled={pulled || isDownloading}
                     className={`text-left p-2.5 rounded-lg border transition-all ${
                       pulled
                         ? isDark ? 'bg-green-500/10 border-green-500/30' : 'bg-green-50 border-green-300'
                         : selected
                         ? isDark ? 'bg-white/10 border-white/30' : 'bg-gray-100 border-gray-900'
                         : isDark ? 'border-white/10 hover:border-white/20' : 'border-gray-200 hover:border-gray-400'
-                    } ${isPulling ? 'opacity-60' : ''}`}
+                    } ${isDownloading ? 'opacity-60' : ''}`}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div>
@@ -640,16 +665,16 @@ export function Onboarding() {
             </div>
 
             <div className="flex items-center gap-2 pt-1">
-              {selectedModels.length > 0 && !isPulling ? (
+              {selectedModels.length > 0 && !isDownloading ? (
                 <button
-                  onClick={handlePullSelected}
+                  onClick={handleDownloadSelected}
                   className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-[0.7rem] font-medium transition-all ${
                     isDark ? 'bg-white text-black hover:bg-gray-200' : 'bg-gray-900 text-white hover:bg-gray-800'
                   }`}
                 >
                   <Download size={14} /> Install {selectedModels.length} model{selectedModels.length > 1 ? 's' : ''}
                 </button>
-              ) : !isPulling ? (
+              ) : !isDownloading ? (
                 <button
                   onClick={() => setStep('done')}
                   className={`flex-1 flex items-center justify-center gap-1.5 ${secondaryBtn}`}

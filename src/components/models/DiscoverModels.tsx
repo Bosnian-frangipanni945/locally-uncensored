@@ -1,21 +1,19 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Download, RefreshCw, ExternalLink, Search, Info, CheckCircle, XCircle, Loader2 } from 'lucide-react'
+import { Download, RefreshCw, ExternalLink, Search, CheckCircle, XCircle, Loader2 } from 'lucide-react'
 import { X } from 'lucide-react'
 import {
-  fetchAbliteratedModels, searchOllamaModels, searchHuggingFaceModels,
+  searchHuggingFaceModels,
   getImageBundles, getVideoBundles,
   getUncensoredTextModels, getMainstreamTextModels,
-  getHuggingFaceUncensoredModels, getHuggingFaceMainstreamModels,
   detectProviderModelPath, startModelDownloadToPath,
-  startModelDownload, getDownloadProgress, searchCivitaiModels,
+  startModelDownload, searchCivitaiModels,
   installBundleComplete, checkBundlesInstalled,
   type DiscoverModel, type DownloadProgress, type ModelBundle, type CivitAIModelResult,
 } from '../../api/discover'
 import { getSystemVRAM } from '../../api/comfyui'
 import { openExternal } from '../../api/backend'
 import { useDownloadStore } from '../../stores/downloadStore'
-import { useModels } from '../../hooks/useModels'
 import { useProviderStore } from '../../stores/providerStore'
 import { GlassCard } from '../ui/GlassCard'
 import { GlowButton } from '../ui/GlowButton'
@@ -28,94 +26,11 @@ interface Props {
   category: ModelCategory
 }
 
-// Variant selector for text models with multiple sizes
-function VariantPullButton({ model, pullModel, isPullingModel, isInstalled }: {
-  model: DiscoverModel
-  pullModel: (name: string) => void
-  isPullingModel: (name: string) => boolean
-  isInstalled: (name: string) => boolean
-}) {
-  const [open, setOpen] = useState(false)
-  // Filter tags that are valid Ollama size/variant identifiers (e.g. 8B, Q4_K_M, e2b, scout, IQ4_XS)
-  const tags = model.tags.filter(t => /^\d+B$/i.test(t) || /^[Qe]\d/i.test(t) || /^IQ\d/i.test(t) || /^[a-z]+$/i.test(t))
-
-  // Human-readable descriptions for non-obvious tags
-  const TAG_INFO: Record<string, string> = {
-    scout: 'Llama 4 Scout — 16×17B MoE, ~109 GB, 10M context',
-    maverick: 'Llama 4 Maverick — 128×17B MoE, ~280 GB, 1M context',
-    e2b: 'Gemma 4 — 2B parameters, lightweight',
-    e4b: 'Gemma 4 — 4B parameters, balanced',
-  }
-
-  // If no size tags or only one, show simple button
-  if (tags.length <= 1) {
-    const fullName = tags.length === 1 ? `${model.name}:${tags[0].toLowerCase()}` : model.name
-    if (isInstalled(fullName)) {
-      return <span className="text-xs text-green-500 px-2 py-1">Installed</span>
-    }
-    return (
-      <button
-        onClick={() => pullModel(fullName)}
-        disabled={isPullingModel(fullName)}
-        className="p-2 rounded-lg bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/15 text-gray-700 dark:text-white disabled:opacity-30 transition-all"
-        title={`Install ${fullName}`}
-      >
-        <Download size={14} />
-      </button>
-    )
-  }
-
-  // Multiple variants → dropdown
-  return (
-    <div className="relative">
-      <button
-        onClick={() => setOpen(!open)}
-        className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/15 text-gray-700 dark:text-white transition-all text-xs"
-      >
-        <Download size={12} />
-        <span>Install</span>
-        <svg className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-      </button>
-      {open && (
-        <div className="absolute right-0 top-full mt-1 z-50 min-w-[120px] rounded-lg bg-gray-100 dark:bg-[#1a1a1a] border border-gray-200 dark:border-white/10 shadow-lg overflow-hidden">
-          {tags.map(tag => {
-            const fullName = `${model.name}:${tag.toLowerCase()}`
-            const installed = isInstalled(fullName)
-            const info = TAG_INFO[tag.toLowerCase()]
-            return (
-              <button
-                key={tag}
-                onClick={() => { if (!installed) pullModel(fullName); setOpen(false) }}
-                disabled={installed || isPullingModel(fullName)}
-                className="w-full flex items-start justify-between gap-3 px-3 py-2 text-xs hover:bg-gray-200 dark:hover:bg-white/10 transition-colors disabled:opacity-50"
-                title={info || `Install ${fullName}`}
-              >
-                <div className="text-left">
-                  <span className="text-gray-800 dark:text-white font-medium">{tag}</span>
-                  {info && <p className="text-[0.6rem] text-gray-500 mt-0.5">{info}</p>}
-                </div>
-                {installed ? (
-                  <CheckCircle size={12} className="text-green-500 shrink-0 mt-0.5" />
-                ) : (
-                  <Download size={12} className="text-gray-400 shrink-0 mt-0.5" />
-                )}
-              </button>
-            )
-          })}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function ModelDiscoverCard({ model, index, isText, getModelDownloadState, pullModel, isPullingModel, isInstalled, isModelFullyInstalled, handleDownload }: {
+function ModelDiscoverCard({ model, index, isText, getModelDownloadState, isModelFullyInstalled, handleDownload }: {
   model: DiscoverModel
   index: number
   isText: boolean
   getModelDownloadState: (m: DiscoverModel) => DownloadProgress | null
-  pullModel: (name: string) => void
-  isPullingModel: (name: string) => boolean
-  isInstalled: (name: string) => boolean
   isModelFullyInstalled: (model: DiscoverModel) => boolean
   handleDownload: (m: DiscoverModel) => void
 }) {
@@ -180,9 +95,7 @@ function ModelDiscoverCard({ model, index, isText, getModelDownloadState, pullMo
                   <Download size={14} />
                 </button>
               )
-            ) : isText ? (
-              <VariantPullButton model={model} pullModel={pullModel} isPullingModel={isPullingModel} isInstalled={isInstalled} />
-            ) : (
+            ) : !isText ? (
               <>
                 {isComplete ? (
                   <span className="flex items-center gap-1 text-xs text-green-500 px-2 py-1">
@@ -216,7 +129,6 @@ function ModelDiscoverCard({ model, index, isText, getModelDownloadState, pullMo
 }
 
 export function DiscoverModels({ category }: Props) {
-  const [textModels, setTextModels] = useState<DiscoverModel[]>([])
   const [civitaiResults, setCivitaiResults] = useState<CivitAIModelResult[]>([])
   const [civitaiSearching, setCivitaiSearching] = useState(false)
   const [civitaiQuery, setCivitaiQuery] = useState('')
@@ -225,33 +137,19 @@ export function DiscoverModels({ category }: Props) {
   const [systemVRAM, setSystemVRAM] = useState<number | null>(null)
   const [subTab, setSubTab] = useState<'uncensored' | 'mainstream'>('uncensored')
   const [vramTier, setVramTier] = useState<'all' | 'lightweight' | 'mid' | 'highend'>('all')
-  const { pullModel, isPullingModel, models: installedModels } = useModels()
   const downloads = useDownloadStore(s => s.downloads)
   const dlStore = useDownloadStore
 
-  // Multi-provider state
+  // Provider state for model path detection
   const providers = useProviderStore(s => s.providers)
-  const [discoverSource, setDiscoverSource] = useState<'ollama' | 'huggingface'>('ollama')
   const [hfModelPath, setHfModelPath] = useState<string | null>(null)
-  const isOllama = discoverSource === 'ollama'
 
-  // Load text models based on selected source
+  // Auto-detect provider model path for GGUF downloads
   useEffect(() => {
     if (category !== 'text') return
-    setLoading(true)
-
-    setSearch('')
-    setHfSearchResults([])
-
-    if (discoverSource === 'ollama') {
-      fetchAbliteratedModels().then(m => { setTextModels(m); setLoading(false) })
-    } else {
-      // Auto-detect provider model path for downloads
-      const providerName = providers.openai?.name || 'LM Studio'
-      detectProviderModelPath(providerName).then(path => setHfModelPath(path))
-      setLoading(false)
-    }
-  }, [category, discoverSource])
+    const providerName = providers.openai?.name || 'LM Studio'
+    detectProviderModelPath(providerName).then(path => setHfModelPath(path))
+  }, [category])
 
   // Detect system VRAM
   useEffect(() => {
@@ -284,12 +182,7 @@ export function DiscoverModels({ category }: Props) {
   const isText = category === 'text'
   const isImage = category === 'image'
   const isVideo = category === 'video'
-  const allModels = isText ? textModels : []
   const bundles = isImage ? getImageBundles() : isVideo ? getVideoBundles() : []
-
-  const filtered = search
-    ? allModels.filter((m) => m.name.toLowerCase().includes(search.toLowerCase()) || m.description.toLowerCase().includes(search.toLowerCase()))
-    : allModels
 
   // Parse VRAM requirement string to minimum GB needed
   // "6-8 GB" → 8 (need at least the upper bound)
@@ -336,25 +229,10 @@ export function DiscoverModels({ category }: Props) {
     ? vramFilteredBundles.filter((b) => b.name.toLowerCase().includes(search.toLowerCase()) || b.description.toLowerCase().includes(search.toLowerCase()))
     : vramFilteredBundles
 
-  const isInstalled = (name: string) => {
-    // Exact match (e.g., "hermes3:8b" === "hermes3:8b")
-    if (installedModels.some((m) => m.name === name)) return true
-    // For names WITH a tag (e.g., "gemma4:31b") — only exact match, no prefix
-    if (name.includes(':')) return false
-    // For names WITHOUT a tag — only match ":latest" (default pull)
-    return installedModels.some((m) => m.name === name + ':latest')
-  }
-
-  // Card-level: is the model fully installed? (all variants or the single default)
+  // GGUF installed check: model is installed if download completed in this session
   const isModelFullyInstalled = (model: DiscoverModel) => {
-    const sizeTags = model.tags.filter(t => /^\d+B$/i.test(t) || /^[Qe]\d/i.test(t) || /^IQ\d/i.test(t) || /^[a-z]+$/i.test(t))
-    if (sizeTags.length <= 1) {
-      // Single variant: check if that specific one is installed
-      const fullName = sizeTags.length === 1 ? `${model.name}:${sizeTags[0].toLowerCase()}` : model.name
-      return isInstalled(fullName)
-    }
-    // Multi-variant: show INSTALLED only if ALL variants are installed
-    return sizeTags.every(tag => isInstalled(`${model.name}:${tag.toLowerCase()}`))
+    if (!model.filename) return false
+    return downloads[model.filename]?.status === 'complete'
   }
 
   const handleDownload = async (model: DiscoverModel) => {
@@ -467,17 +345,7 @@ export function DiscoverModels({ category }: Props) {
 
   const [hfSearchResults, setHfSearchResults] = useState<DiscoverModel[]>([])
 
-  const handleOllamaSearch = async () => {
-    if (!search.trim() || !isText) return
-    setLoading(true)
-    try {
-      const results = await searchOllamaModels(search.trim())
-      setTextModels(results)
-    } catch { /* keep existing */ }
-    setLoading(false)
-  }
-
-  const handleHfSearch = async () => {
+  const handleSearch = async () => {
     if (!search.trim() || !isText) return
     setLoading(true)
     try {
@@ -487,12 +355,8 @@ export function DiscoverModels({ category }: Props) {
     setLoading(false)
   }
 
-  const uncensoredModels = isText
-    ? (isOllama ? getUncensoredTextModels() : getHuggingFaceUncensoredModels())
-    : []
-  const mainstreamModels = isText
-    ? (isOllama ? getMainstreamTextModels() : getHuggingFaceMainstreamModels())
-    : []
+  const uncensoredModels = isText ? getUncensoredTextModels() : []
+  const mainstreamModels = isText ? getMainstreamTextModels() : []
 
   const filteredUncensored = search
     ? uncensoredModels.filter((m) => m.name.toLowerCase().includes(search.toLowerCase()) || m.description.toLowerCase().includes(search.toLowerCase()))
@@ -501,27 +365,21 @@ export function DiscoverModels({ category }: Props) {
     ? mainstreamModels.filter((m) => m.name.toLowerCase().includes(search.toLowerCase()) || m.description.toLowerCase().includes(search.toLowerCase()))
     : mainstreamModels
 
-  const title = isText ? 'Discover LUncensored' : isImage ? 'Discover LUncensored' : 'Discover LUncensored'
+  const title = 'Discover LUncensored'
   const subtitle = isText
-    ? (isOllama ? 'Search the Ollama registry or browse curated models.'
-      : `Download GGUF models from HuggingFace.${hfModelPath ? ` Saves to: ${hfModelPath}` : ''}`)
+    ? `Download GGUF models from HuggingFace.${hfModelPath ? ` Saves to: ${hfModelPath}` : ''}`
     : isImage
       ? 'Browse image generation models for ComfyUI.'
       : 'Browse video generation models for ComfyUI.'
 
   const handleRefresh = () => {
     setLoading(true)
-    if (isOllama) {
-      fetchAbliteratedModels().then(m => { setTextModels(m); setLoading(false) })
-    } else {
-      // HF curated lists are static — just re-detect model path and clear search results
-      setHfSearchResults([])
-      const providerName = providers.openai?.name || 'LM Studio'
-      detectProviderModelPath(providerName).then(path => { setHfModelPath(path); setLoading(false) })
-    }
+    setHfSearchResults([])
+    const providerName = providers.openai?.name || 'LM Studio'
+    detectProviderModelPath(providerName).then(path => { setHfModelPath(path); setLoading(false) })
   }
 
-  const handleHfDownload = async (model: DiscoverModel) => {
+  const handleTextDownload = async (model: DiscoverModel) => {
     if (!model.downloadUrl || !model.filename) return
     const destDir = hfModelPath || (await detectProviderModelPath(providers.openai?.name || 'LM Studio'))
     if (!destDir) {
@@ -535,17 +393,8 @@ export function DiscoverModels({ category }: Props) {
       await startModelDownloadToPath(model.downloadUrl, destDir, model.filename, expectedBytes)
       dlStore.getState().startPolling()
     } catch (e) {
-      console.error('HF download failed:', e)
+      console.error('GGUF download failed:', e)
       setInstallError(`Download failed: ${e instanceof Error ? e.message : String(e)}`)
-    }
-  }
-
-  // Unified download handler — routes to HF or ComfyUI based on source
-  const handleModelDownload = (model: DiscoverModel) => {
-    if (!isOllama && isText) {
-      handleHfDownload(model)
-    } else {
-      handleDownload(model)
     }
   }
 
@@ -562,32 +411,13 @@ export function DiscoverModels({ category }: Props) {
 
       <p className="text-sm text-gray-500">{subtitle}</p>
 
-      {/* Source Selector — Ollama (pull) or HuggingFace (GGUF download) */}
-      {isText && (
-        <div className="flex gap-2">
-          {(['ollama', 'huggingface'] as const).map(src => (
-            <button
-              key={src}
-              onClick={() => setDiscoverSource(src)}
-              className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${
-                discoverSource === src
-                  ? 'bg-white/15 text-white border border-white/20'
-                  : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'
-              }`}
-            >
-              {src === 'ollama' ? 'Ollama' : 'HuggingFace'}
-            </button>
-          ))}
-        </div>
-      )}
-
       <div className="relative">
         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && isText) { isOllama ? handleOllamaSearch() : handleHfSearch() } }}
-          placeholder={isText ? (isOllama ? 'Search Ollama registry... (Enter to search)' : 'Search HuggingFace GGUF models... (Enter to search)') : 'Filter models...'}
+          onKeyDown={(e) => { if (e.key === 'Enter' && isText) handleSearch() }}
+          placeholder={isText ? 'Search HuggingFace GGUF models... (Enter to search)' : 'Filter models...'}
           className="w-full pl-9 pr-3 py-2 rounded-lg bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:border-gray-400 dark:focus:border-white/30"
         />
       </div>
@@ -825,8 +655,8 @@ export function DiscoverModels({ category }: Props) {
         </GlassCard>
       )}
 
-      {/* HuggingFace model path info */}
-      {!isOllama && isText && hfModelPath && (
+      {/* GGUF model path info */}
+      {isText && hfModelPath && (
         <p className="text-[0.65rem] text-gray-500 truncate">
           Downloads save to: {hfModelPath}
         </p>
@@ -839,7 +669,7 @@ export function DiscoverModels({ category }: Props) {
           {subTab === 'uncensored' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {filteredUncensored.map((model, i) => (
-                <ModelDiscoverCard key={model.name} model={model} index={i} isText={isText} getModelDownloadState={getModelDownloadState} pullModel={pullModel} isPullingModel={isPullingModel} isInstalled={isInstalled} isModelFullyInstalled={isModelFullyInstalled} handleDownload={handleModelDownload} />
+                <ModelDiscoverCard key={model.name} model={model} index={i} isText={isText} getModelDownloadState={getModelDownloadState} isModelFullyInstalled={isModelFullyInstalled} handleDownload={handleTextDownload} />
               ))}
               {filteredUncensored.length === 0 && (
                 <p className="text-center text-gray-500 py-4 col-span-2">No uncensored models match your search</p>
@@ -849,7 +679,7 @@ export function DiscoverModels({ category }: Props) {
           {subTab === 'mainstream' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {filteredMainstream.map((model, i) => (
-                <ModelDiscoverCard key={model.name} model={model} index={i} isText={isText} getModelDownloadState={getModelDownloadState} pullModel={pullModel} isPullingModel={isPullingModel} isInstalled={isInstalled} isModelFullyInstalled={isModelFullyInstalled} handleDownload={handleModelDownload} />
+                <ModelDiscoverCard key={model.name} model={model} index={i} isText={isText} getModelDownloadState={getModelDownloadState} isModelFullyInstalled={isModelFullyInstalled} handleDownload={handleTextDownload} />
               ))}
               {filteredMainstream.length === 0 && (
                 <p className="text-center text-gray-500 py-4 col-span-2">No mainstream models match your search</p>
@@ -857,39 +687,21 @@ export function DiscoverModels({ category }: Props) {
             </div>
           )}
 
-          {/* Ollama Search Results */}
-          {isOllama && search && filtered.filter(m => !uncensoredModels.some(u => u.name === m.name) && !mainstreamModels.some(u => u.name === m.name)).length > 0 && (
-            <div className="space-y-3 mt-6">
-              <h3 className="text-[0.7rem] font-semibold text-gray-500 uppercase tracking-wider">Search Results</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {filtered.filter(m => !uncensoredModels.some(u => u.name === m.name) && !mainstreamModels.some(u => u.name === m.name)).map((model, i) => (
-                  <ModelDiscoverCard key={model.name} model={model} index={i} isText={isText} getModelDownloadState={getModelDownloadState} pullModel={pullModel} isPullingModel={isPullingModel} isInstalled={isInstalled} isModelFullyInstalled={isModelFullyInstalled} handleDownload={handleModelDownload} />
-                ))}
-              </div>
-            </div>
-          )}
-
           {/* HuggingFace Search Results */}
-          {!isOllama && hfSearchResults.length > 0 && (
+          {hfSearchResults.length > 0 && (
             <div className="space-y-3 mt-6">
               <h3 className="text-[0.7rem] font-semibold text-gray-500 uppercase tracking-wider">HuggingFace Search Results</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {hfSearchResults.map((model, i) => (
-                  <ModelDiscoverCard key={model.name + i} model={model} index={i} isText={isText} getModelDownloadState={getModelDownloadState} pullModel={pullModel} isPullingModel={isPullingModel} isInstalled={isInstalled} isModelFullyInstalled={isModelFullyInstalled} handleDownload={handleModelDownload} />
+                  <ModelDiscoverCard key={model.name + i} model={model} index={i} isText={isText} getModelDownloadState={getModelDownloadState} isModelFullyInstalled={isModelFullyInstalled} handleDownload={handleTextDownload} />
                 ))}
               </div>
             </div>
           )}
         </>
-      ) : !isVideo ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {filtered.map((model, i) => (
-            <ModelDiscoverCard key={model.name} model={model} index={i} isText={false} getModelDownloadState={getModelDownloadState} pullModel={pullModel} isPullingModel={isPullingModel} isInstalled={isInstalled} isModelFullyInstalled={isModelFullyInstalled} handleDownload={handleDownload} />
-          ))}
-        </div>
       ) : null}
 
-      {!loading && isOllama && filtered.length === 0 && filteredBundles.length === 0 && filteredUncensored.length === 0 && filteredMainstream.length === 0 && (
+      {!loading && filteredBundles.length === 0 && filteredUncensored.length === 0 && filteredMainstream.length === 0 && (
         <p className="text-center text-gray-500 py-4">No models found</p>
       )}
     </div>
