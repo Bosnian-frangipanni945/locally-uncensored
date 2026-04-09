@@ -232,7 +232,7 @@ export async function buildDynamicWorkflow(
     const clipType = type === 'flux2' ? 'flux2'
       : type === 'flux' ? 'flux'
       : type === 'ltx' ? 'ltxv'
-      : (type === 'wan' || type === 'hunyuan' || type === 'framepack') ? 'wan'
+      : (type === 'wan' || type === 'hunyuan') ? 'wan'
       : type === 'mochi' ? 'mochi'
       : type === 'cosmos' ? 'cosmos'
       : 'flux'
@@ -575,15 +575,20 @@ function buildFramePackWorkflow(params: VideoParams, seed: number, nodes: Catego
   const clipVisionId = String(n++)
   const vaeId = String(n++)
   const imageId = String(n++)
-  const encodeId = String(n++)
   const posId = String(n++)
   const samplerId = String(n++)
   const decodeId = String(n++)
 
   workflow[modelId] = { class_type: 'LoadFramePackModel', inputs: { model: params.model, base_precision: 'bf16', quantization: 'disabled', load_device: 'main_device' } }
-  workflow[clipId] = { class_type: 'CLIPLoader', inputs: { clip_name: 'llava_llama3_fp8_scaled.safetensors', type: 'wan', device: 'default' } }
+  // DualCLIPLoader with type "hunyuan_video" — CLIPLoader type "wan" creates Llama2 with 128256 vocab
+  // but llava_llama3 has 128320 tokens, causing state_dict size mismatch. DualCLIPLoader handles both correctly.
+  workflow[clipId] = { class_type: 'DualCLIPLoader', inputs: { clip_name1: 'clip_l.safetensors', clip_name2: 'llava_llama3_fp8_scaled.safetensors', type: 'hunyuan_video' } }
+  workflow[clipVisionId] = { class_type: 'CLIPVisionLoader', inputs: { clip_name: 'sigclip_vision_patch14_384.safetensors' } }
   workflow[vaeId] = { class_type: 'VAELoader', inputs: { vae_name: 'hunyuanvideo15_vae_fp16.safetensors' } }
   workflow[imageId] = { class_type: 'LoadImage', inputs: { image: params.inputImage || 'input_image.png' } }
+  // Encode image for CLIP vision embeddings (FramePackSampler image_embeds input)
+  const clipVisionEncodeId = String(n++)
+  workflow[clipVisionEncodeId] = { class_type: 'CLIPVisionEncode', inputs: { crop: 'center', clip_vision: [clipVisionId, 0], image: [imageId, 0] } }
   // Encode image to latent (FramePackSampler needs LATENT, not IMAGE)
   const vaeEncodeId = String(n++)
   workflow[vaeEncodeId] = { class_type: 'VAEEncode', inputs: { pixels: [imageId, 0], vae: [vaeId, 0] } }
@@ -594,7 +599,8 @@ function buildFramePackWorkflow(params: VideoParams, seed: number, nodes: Catego
     class_type: 'FramePackSampler',
     inputs: {
       model: [modelId, 0], positive: [posId, 0], negative: [negId, 0],
-      start_latent: [vaeEncodeId, 0], steps: params.steps, cfg: params.cfgScale || 1.0,
+      start_latent: [vaeEncodeId, 0], image_embeds: [clipVisionEncodeId, 0],
+      steps: params.steps, cfg: params.cfgScale || 1.0,
       guidance_scale: 10.0, shift: 3.0, seed, latent_window_size: 9,
       total_second_length: (params.numFrames || 49) / (params.fps || 16),
       gpu_memory_preservation: 6.0, sampler: 'unipc_bh2',
