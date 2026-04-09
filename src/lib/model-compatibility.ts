@@ -27,7 +27,8 @@ const AGENT_COMPATIBLE = [
  * Check if a model supports Agent Mode.
  * Cloud providers always support tools. Ollama needs explicit check.
  */
-export function isAgentCompatible(modelName: string): boolean {
+export function isAgentCompatible(modelName: string | null): boolean {
+  if (!modelName) return false
   const providerId = getProviderIdFromModel(modelName)
 
   // Cloud providers always support tool calling
@@ -68,7 +69,8 @@ const THINKING_COMPATIBLE = [
  * Check if a model supports thinking/chain-of-thought mode.
  * Cloud providers handle it gracefully. Ollama needs explicit support.
  */
-export function isThinkingCompatible(modelName: string): boolean {
+export function isThinkingCompatible(modelName: string | null): boolean {
+  if (!modelName) return false
   const providerId = getProviderIdFromModel(modelName)
   if (providerId === 'openai' || providerId === 'anthropic') return true
 

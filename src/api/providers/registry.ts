@@ -100,6 +100,7 @@ export function getEnabledProviders(): ProviderClient[] {
  * Returns 'ollama' if no prefix.
  */
 export function getProviderIdFromModel(modelName: string): ProviderId {
+  if (!modelName) return 'ollama'
   const parts = modelName.split('::')
   return parts.length === 2 ? parts[0] as ProviderId : 'ollama'
 }

@@ -93,13 +93,13 @@ export function ModelManager() {
             <h1 className="text-[0.8rem] font-semibold text-gray-800 dark:text-gray-200">Model Manager</h1>
           </div>
           <div className="flex items-center gap-1.5">
-            <button onClick={fetchModels} className="p-1.5 rounded-lg hover:bg-white/10 text-gray-500 hover:text-white transition-colors">
+            <button onClick={fetchModels} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors">
               <RefreshCw size={13} />
             </button>
             {ollamaEnabled && (
               <button
                 onClick={() => setPullOpen(true)}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-[0.65rem] text-gray-300 hover:bg-white/10 transition-colors"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-[0.65rem] text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
               >
                 <Download size={12} /> Pull Model
               </button>

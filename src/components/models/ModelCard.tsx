@@ -27,8 +27,8 @@ export function ModelCard({ model, isActive, onSelect, onDelete, onInfo, canDele
       onClick={onSelect}
       className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-all group ${
         isActive
-          ? 'bg-white/[0.04] border-l-2 border-l-blue-400'
-          : 'hover:bg-white/[0.02] border-l-2 border-l-transparent'
+          ? 'bg-blue-50 dark:bg-white/[0.04] border-l-2 border-l-blue-400'
+          : 'hover:bg-gray-50 dark:hover:bg-white/[0.02] border-l-2 border-l-transparent'
       }`}
     >
       {/* Type icon */}
@@ -37,7 +37,7 @@ export function ModelCard({ model, isActive, onSelect, onDelete, onInfo, canDele
       {/* Name + details */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className="text-[0.72rem] text-gray-200 font-medium truncate">{model.name}</span>
+          <span className="text-[0.72rem] text-gray-800 dark:text-gray-200 font-medium truncate">{model.name}</span>
           {isActive && <span className="text-[0.5rem] text-blue-400 font-medium uppercase">Active</span>}
         </div>
         <div className="flex items-center gap-2 text-[0.6rem] text-gray-500">
@@ -66,7 +66,7 @@ export function ModelCard({ model, isActive, onSelect, onDelete, onInfo, canDele
       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
         <button
           onClick={(e) => { e.stopPropagation(); onInfo() }}
-          className="p-1 rounded hover:bg-white/10 text-gray-500 hover:text-gray-300 transition-colors"
+          className="p-1 rounded hover:bg-gray-100 dark:hover:bg-white/10 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
           title="Details"
         >
           <Info size={12} />

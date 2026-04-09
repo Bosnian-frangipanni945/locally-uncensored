@@ -69,6 +69,10 @@ src-tauri/src/commands/      — Rust commands: install, process, download, prox
 
 37. **Think-Mode guard for non-thinking models** — isThinkingCompatible() in model-compatibility.ts checks if model supports Ollama's `think` parameter. ChatView shows amber hint toast instead of crashing with HTTP 400. useChat.ts double-guards by not sending `think=true` to incompatible models. Supports: QwQ, DeepSeek-R1, Qwen3/3.5, Qwen3-Coder, Gemma3/4. Cloud providers always pass through.
 
+38. **Chat homepage null crash fix** — getProviderIdFromModel(), isThinkingCompatible(), isAgentCompatible() all crashed with "Cannot read properties of null (reading 'split')" when activeModel was null after fresh install. Added null guards to all three functions.
+39. **Light Theme contrast fix** — ModelCard model names were invisible in light mode (text-gray-200 on white). Fixed: dark:text-gray-200 text-gray-800. Also fixed ModelManager buttons and ModelCard hover/active states for light theme.
+40. **Gemma 4 31B Heretic download URL fix** — llmfan46/gemma-4-31B-it-uncensored-heretic-GGUF repo was deleted (404). Replaced with Stabhappy/gemma-4-31B-it-heretic-Gguf. All 105 download URLs verified HTTP 200/302.
+
 ### What's LEFT to finish v2.3.0:
 1. **Tauri proxy_localhost investigation** — reqwest in Tauri subprocess can't reach localhost. Direct fetch workaround in place but root cause unknown. Low priority since workaround works. Deferred to next release.
 2. **LTX VAEDecode reference** — dynamic-workflow.ts line 263: vaeSourceId incorrectly points to UNETLoader output for LTX strategy. Fix when LTX model is installed for testing.
