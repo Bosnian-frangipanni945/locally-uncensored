@@ -254,7 +254,7 @@ export const COMPONENT_REGISTRY: Record<string, ComponentRequirements> = {
     clip: { patterns: ['t5'], downloadName: 't5xxl_fp16.safetensors', downloadUrl: 'https://huggingface.co/Kijai/CogVideoX_comfy/resolve/main/t5xxl_fp16.safetensors', subfolder: 'text_encoders' },
     needsSeparateVAE: true, needsSeparateCLIP: true,
   },
-  svd: { loader: 'CheckpointLoaderSimple', needsSeparateVAE: false, needsSeparateCLIP: false },
+  svd: { loader: 'ImageOnlyCheckpointLoader', needsSeparateVAE: false, needsSeparateCLIP: false },
   framepack: {
     loader: 'UNETLoader',
     vae: { patterns: ['hunyuan', 'wan'], downloadName: 'hunyuanvideo15_vae_fp16.safetensors', downloadUrl: 'https://huggingface.co/Comfy-Org/HunyuanVideo_1.5_repackaged/resolve/main/split_files/vae/hunyuanvideo15_vae_fp16.safetensors', subfolder: 'vae' },

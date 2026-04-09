@@ -195,7 +195,7 @@ export const COMPONENT_REGISTRY: Record<string, ComponentRequirements> = {
   },
   cogvideo: {
     loader: 'UNETLoader', needsSeparateVAE: true, needsSeparateCLIP: true, clipType: 'cogvideo',
-    vae: { matchPatterns: ['cogvideox', 'cogvideo'], downloadFilename: 'cogvideox_vae.safetensors' },
+    vae: { matchPatterns: ['cogvideox', 'cogvideo'], downloadFilename: 'cogvideox_vae_bf16.safetensors' },
     clip: { matchPatterns: ['t5'], downloadFilename: 't5xxl_fp16.safetensors' },
   },
   svd: {
@@ -203,12 +203,12 @@ export const COMPONENT_REGISTRY: Record<string, ComponentRequirements> = {
   },
   framepack: {
     loader: 'UNETLoader', needsSeparateVAE: true, needsSeparateCLIP: true, clipType: 'wan',
-    vae: { matchPatterns: ['hunyuan', 'wan'], downloadFilename: 'hunyuan_video_vae_bf16.safetensors' },
+    vae: { matchPatterns: ['hunyuan', 'wan'], downloadFilename: 'hunyuanvideo15_vae_fp16.safetensors' },
     clip: { matchPatterns: ['llava', 'qwen', 'umt5'], downloadFilename: 'llava_llama3_fp8_scaled.safetensors' },
   },
   pyramidflow: {
     loader: 'UNETLoader', needsSeparateVAE: true, needsSeparateCLIP: false, clipType: 'pyramidflow',
-    vae: { matchPatterns: ['pyramid'], downloadFilename: 'pyramid_flow_vae.safetensors' },
+    vae: { matchPatterns: ['pyramid'], downloadFilename: 'pyramid_flow_vae_bf16.safetensors' },
   },
   allegro: {
     loader: 'UNETLoader', needsSeparateVAE: false, needsSeparateCLIP: false, clipType: 'allegro',
@@ -505,12 +505,12 @@ export async function findMatchingVAE(modelType: ModelType): Promise<string> {
   if (modelType === 'cogvideo') {
     const match = vaes.find(v => lower(v).includes('cogvideox') || lower(v).includes('cogvideo'))
     if (match) return match
-    throw new Error(`No CogVideoX VAE found. Download "cogvideox_vae.safetensors" from the Model Manager.`)
+    throw new Error(`No CogVideoX VAE found. Download "cogvideox_vae_bf16.safetensors" from the Model Manager.`)
   }
   if (modelType === 'framepack') {
     const match = vaes.find(v => lower(v).includes('hunyuan') || lower(v).includes('wan'))
     if (match) return match
-    throw new Error(`No FramePack VAE found. Download "hunyuan_video_vae_bf16.safetensors" from the Model Manager.`)
+    throw new Error(`No FramePack VAE found. Download "hunyuanvideo15_vae_fp16.safetensors" from the Model Manager.`)
   }
   if (modelType === 'pyramidflow') {
     const match = vaes.find(v => lower(v).includes('pyramid'))

@@ -120,7 +120,7 @@ function ModelDiscoverCard({ model, index, isText, getModelDownloadState, isMode
                   </button>
                 )}
               </>
-            )}
+            ) : null}
           </div>
         </div>
       </GlassCard>

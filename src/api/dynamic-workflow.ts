@@ -582,7 +582,7 @@ function buildFramePackWorkflow(params: VideoParams, seed: number, nodes: Catego
 
   workflow[modelId] = { class_type: 'FramePackModelLoader', inputs: { model: params.model } }
   workflow[clipId] = { class_type: 'CLIPLoader', inputs: { clip_name: 'llava_llama3_fp8_scaled.safetensors', type: 'wan', device: 'default' } }
-  workflow[clipVisionId] = { class_type: 'CLIPVisionLoader', inputs: { clip_name: 'sigclip_vision_384.safetensors' } }
+  workflow[clipVisionId] = { class_type: 'CLIPVisionLoader', inputs: { clip_name: 'sigclip_vision_patch14_384.safetensors' } }
   workflow[vaeId] = { class_type: 'VAELoader', inputs: { vae_name: 'hunyuanvideo15_vae_fp16.safetensors' } }
   workflow[imageId] = { class_type: 'LoadImage', inputs: { image: params.inputImage || 'input_image.png' } }
   workflow[encodeId] = { class_type: 'FramePackEncode', inputs: { image: [imageId, 0], clip_vision: [clipVisionId, 0] } }
@@ -608,7 +608,7 @@ function buildPyramidFlowWorkflow(params: VideoParams, seed: number, nodes: Cate
   const decodeId = String(n++)
 
   workflow[modelId] = { class_type: 'PyramidFlowModelLoader', inputs: { model: params.model } }
-  workflow[vaeId] = { class_type: 'PyramidFlowVAELoader', inputs: { vae: 'pyramid_flow_vae.safetensors' } }
+  workflow[vaeId] = { class_type: 'PyramidFlowVAELoader', inputs: { vae: 'pyramid_flow_vae_bf16.safetensors' } }
   workflow[posId] = { class_type: 'PyramidFlowTextEncode', inputs: { text: params.prompt } }
   workflow[samplerId] = {
     class_type: 'PyramidFlowSampler',
