@@ -85,7 +85,7 @@ No cloud. No censorship. No data collection. Auto-detects 12 local backends. You
 ## Features
 
 ### Core
-- **Plug & Play Setup** — First-launch wizard auto-detects 12 local backends. Nothing installed? One-click install links for every backend. Re-Scan after install. Zero config needed.
+- **Plug & Play Setup** — First-launch wizard auto-detects 12 local backends. Nothing installed? One-click in-app Ollama download and install with progress bar. ComfyUI one-click install with step-by-step progress. Configurable ComfyUI port and path in Settings. Zero config needed.
 - **Uncensored AI Chat** — Abliterated models with zero restrictions. Streaming + thinking display.
 - **Multi-Provider** — 20+ presets. Local: Ollama, LM Studio, vLLM, KoboldCpp, llama.cpp, LocalAI, Jan, TabbyAPI, GPT4All, Aphrodite, SGLang, TGI. Cloud: OpenAI, Anthropic, OpenRouter, Groq, Together, DeepSeek, Mistral. Switch per conversation.
 - **Codex Coding Agent** — Reads codebase, writes code, runs shell commands. File tree with native folder picker. Up to 20 tool iterations.
