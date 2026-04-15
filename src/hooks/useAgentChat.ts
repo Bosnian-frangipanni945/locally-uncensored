@@ -23,7 +23,8 @@ import { buildExtractionPrompt, parseExtractionResponse } from '../lib/memory-ex
 import { useAgentWorkflowStore } from '../stores/agentWorkflowStore'
 import { WorkflowEngine } from '../lib/workflow-engine'
 import type { AgentBlock, AgentToolCall, OllamaChatMessage } from '../types/agent-mode'
-import { selectRelevantTools } from '../lib/tool-selection'
+import { selectRelevantTools, selectRelevantToolsAsync } from '../lib/tool-selection'
+import { generateEmbeddings } from '../api/rag'
 import type { ChatMessage, ToolCall, ToolDefinition } from '../api/providers/types'
 import type { StepResult, WorkflowEngineCallbacks } from '../types/agent-workflows'
 import { executeParallel, applyResultToToolCall, type ExecutionRequest } from '../api/agents/tool-executor'
@@ -408,9 +409,17 @@ export function useAgentChat() {
             timestamp: Date.now(),
           })
 
-          // Intelligent tool selection — only include relevant tools
+          // Intelligent tool selection — keyword for small lists, embedding
+          // routing once the total tool count grows past the threshold
+          // (Phase 9). The embedding call is best-effort: if Ollama is
+          // unreachable it silently falls back to keyword-only.
           const lastUserMsg = agentMessages.filter(m => m.role === 'user').pop()?.content || ''
-          const relevantDefs = selectRelevantTools(lastUserMsg, toolRegistry.getAll(), permissions)
+          const relevantDefs = await selectRelevantToolsAsync(
+            lastUserMsg,
+            toolRegistry.getAll(),
+            permissions,
+            { embed: (texts) => generateEmbeddings(texts) }
+          )
           const tools: ToolDefinition[] = relevantDefs.map(t => ({
             type: 'function' as const,
             function: { name: t.name, description: t.description, parameters: t.inputSchema },
