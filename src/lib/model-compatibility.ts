@@ -80,6 +80,28 @@ export function isThinkingCompatible(modelName: string | null): boolean {
 }
 
 /**
+ * Gemma 3/4 are thinking-compatible but their `think: false` path produces
+ * plain-text structured planning (`Plan:`, `Constraint Checklist:`,
+ * `Confidence Score:`) that has no tags we can strip — the model trained
+ * itself to talk its reasoning out loud when forced out of thinking mode.
+ *
+ * The `think: true` path produces `<|channel|>thought` tags instead, which
+ * our thinking-stripper can remove cleanly.
+ *
+ * So when the user toggles Thinking OFF on a Gemma model, we actually pass
+ * `thinking: undefined` (let Ollama default to on), and rely on the stripper
+ * + the `keepThinking === false` gate to silently discard the tagged
+ * reasoning content from the UI. The user gets the clean final answer; the
+ * model doesn't leak a planning preamble.
+ */
+export function isPlainTextPlanner(modelName: string | null): boolean {
+  if (!modelName) return false
+  const name = modelName.toLowerCase()
+  const baseName = name.replace(/^[^/]+\//, '').replace(/:.*$/, '').replace(/-abliterated/g, '').replace(/-uncensored/g, '')
+  return baseName.startsWith('gemma3') || baseName.startsWith('gemma4')
+}
+
+/**
  * Models recommended for Claude Code (Anthropic API compat via Ollama 0.14+).
  * These models handle agentic tool-use loops well with the Claude Code CLI.
  */

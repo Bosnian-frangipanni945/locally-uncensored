@@ -13,7 +13,7 @@ import { chatNonStreaming } from '../api/agents'
 import type { CodexEvent } from '../types/codex'
 import type { AgentBlock, AgentToolCall } from '../types/agent-mode'
 import { selectRelevantTools } from '../lib/tool-selection'
-import { isThinkingCompatible } from '../lib/model-compatibility'
+import { isThinkingCompatible, isPlainTextPlanner } from '../lib/model-compatibility'
 import type { ChatMessage, ToolCall, ToolDefinition } from '../api/providers/types'
 import { executeParallel, applyResultToToolCall, type ExecutionRequest } from '../api/agents/tool-executor'
 import { useToolAuditStore } from '../stores/toolAuditStore'
@@ -191,13 +191,19 @@ export function useCodex() {
         let toolCalls: ToolCall[] = []
         let turnContent = ''
 
+        // Plain-text-planner escape for Gemma 3/4 — see useChat.ts.
+        const canThinkCx = isThinkingCompatible(activeModel)
+        const plainPlanCx = isPlainTextPlanner(activeModel)
+        const thinkOptCx: boolean | undefined = canThinkCx
+          ? (settings.thinkingEnabled === false && plainPlanCx
+              ? undefined
+              : settings.thinkingEnabled === true)
+          : undefined
+
         const chatOptions = {
           temperature: 0.1, // Low temp for coding precision
           maxTokens: settings.maxTokens || undefined,
-          // Tri-state think flag — see useChat.ts for rationale.
-          thinking: isThinkingCompatible(activeModel)
-            ? settings.thinkingEnabled === true
-            : (undefined as unknown as boolean),
+          thinking: thinkOptCx as unknown as boolean,
           signal: abort.signal,
         }
 

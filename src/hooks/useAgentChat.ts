@@ -11,7 +11,7 @@ import { retrieveContext } from '../api/rag'
 import { speakStreaming, isSpeechSynthesisSupported, getVoicesAsync } from '../api/voice'
 import { toolRegistry } from '../api/mcp'
 import { usePermissionStore } from '../stores/permissionStore'
-import { isThinkingCompatible } from '../lib/model-compatibility'
+import { isThinkingCompatible, isPlainTextPlanner } from '../lib/model-compatibility'
 // Legacy compat imports (still used by some callers)
 import { getToolPermission, executeAgentTool, AGENT_TOOL_DEFS } from '../api/tool-registry'
 import { getToolCallingStrategy, type ToolCallingStrategy } from '../lib/model-compatibility'
@@ -409,18 +409,25 @@ export function useAgentChat() {
         let turnContent = ''
         let turnThinking = ''
 
+        // Plain-text-planner escape: Gemma 3/4 with think=false drops
+        // into structured plain-text planning (Plan: / Constraint
+        // Checklist: / Confidence Score:) with no tags to strip. Pass
+        // `undefined` instead so Ollama keeps the model in tagged-
+        // thinking mode; the stripper removes the tags silently.
+        const canThinkAgent = isThinkingCompatible(activeModel)
+        const plainPlanAgent = isPlainTextPlanner(activeModel)
+        const thinkOpt: boolean | undefined = canThinkAgent
+          ? (settings.thinkingEnabled === false && plainPlanAgent
+              ? undefined
+              : settings.thinkingEnabled === true)
+          : undefined
+
         const chatOptions = {
           temperature: settings.temperature,
           topP: settings.topP,
           topK: settings.topK,
           maxTokens: settings.maxTokens || undefined,
-          // Tri-state: thinking-compatible models get an explicit true|false
-          // (OFF → tell Ollama `think: false` so the model stops thinking
-          // instead of secretly thinking + hiding it). Non-thinking models
-          // get `undefined` so the field is omitted entirely.
-          thinking: isThinkingCompatible(activeModel)
-            ? settings.thinkingEnabled === true
-            : (undefined as unknown as boolean),
+          thinking: thinkOpt as unknown as boolean,
           signal: abort.signal,
         }
 

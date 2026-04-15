@@ -13,7 +13,7 @@ import { useAgentChat } from "./useAgentChat"
 import { useMemory } from "./useMemory"
 import { useAgentModeStore } from "../stores/agentModeStore"
 import { getProviderForModel, getProviderIdFromModel } from "../api/providers"
-import { isThinkingCompatible } from "../lib/model-compatibility"
+import { isThinkingCompatible, isPlainTextPlanner } from "../lib/model-compatibility"
 import { stripNonCanonicalTags, finalStripThinkingTags } from "../lib/thinking-stripper"
 import type { ChatStreamChunk } from "../api/providers/types"
 import type { ImageAttachment } from "../types/chat"
@@ -168,9 +168,20 @@ export function useChat() {
       // (true or false). For every other model we leave `thinking`
       // undefined so the provider omits `think` entirely and Ollama does
       // whatever it normally does.
+      //
+      // Exception: plain-text-planner models (Gemma 3/4). Their `think:
+      // false` path emits structured plain-text planning that has no
+      // tags. We pass `undefined` instead (= Ollama default) so the model
+      // stays in tagged-thinking mode; the thinking-stripper then removes
+      // the tags silently and keepThinking=false below drops the native
+      // thinking field, so the user sees a clean answer without a
+      // planning preamble.
       const canThink = isThinkingCompatible(activeModel)
+      const plainTextPlanner = isPlainTextPlanner(activeModel)
       const useThinking: boolean | undefined = canThink
-        ? settings.thinkingEnabled === true
+        ? (settings.thinkingEnabled === false && plainTextPlanner
+            ? undefined
+            : settings.thinkingEnabled === true)
         : undefined
       const chatOpts = {
         temperature: settings.temperature,
