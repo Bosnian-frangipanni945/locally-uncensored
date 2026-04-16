@@ -34,6 +34,7 @@ interface ChatState {
   renameConversation: (id: string, title: string) => void
   setActiveConversation: (id: string | null) => void
   addMessage: (conversationId: string, message: Message) => void
+  insertMessageBefore: (conversationId: string, beforeId: string, message: Message) => void
   updateMessageContent: (conversationId: string, messageId: string, content: string) => void
   updateMessageThinking: (conversationId: string, messageId: string, thinking: string) => void
   updateMessageAgentBlocks: (conversationId: string, messageId: string, blocks: AgentBlock[]) => void
@@ -107,6 +108,18 @@ export const useChatStore = create<ChatState>()(
               }
               : c
           ),
+        })),
+
+      insertMessageBefore: (conversationId, beforeId, message) =>
+        set((state) => ({
+          conversations: state.conversations.map((c) => {
+            if (c.id !== conversationId) return c
+            const idx = c.messages.findIndex((m) => m.id === beforeId)
+            if (idx < 0) return { ...c, messages: [...c.messages, message], updatedAt: Date.now() }
+            const msgs = [...c.messages]
+            msgs.splice(idx, 0, message)
+            return { ...c, messages: msgs, updatedAt: Date.now() }
+          }),
         })),
 
       updateMessageContent: (conversationId, messageId, content) =>

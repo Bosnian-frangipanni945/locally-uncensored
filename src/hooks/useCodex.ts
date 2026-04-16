@@ -10,6 +10,7 @@ import { usePermissionStore } from '../stores/permissionStore'
 import { getToolCallingStrategy } from '../lib/model-compatibility'
 import { buildHermesToolPrompt, buildHermesToolResult, parseHermesToolCalls, stripToolCallTags, hasToolCallTags } from '../api/hermes-tool-calling'
 import { chatNonStreaming } from '../api/agents'
+import { setActiveChatId, clearActiveChatId } from '../api/agent-context'
 import type { CodexEvent } from '../types/codex'
 import type { AgentBlock, AgentToolCall } from '../types/agent-mode'
 import { selectRelevantTools } from '../lib/tool-selection'
@@ -21,6 +22,7 @@ import { makeInTurnCacheLookup } from '../api/agents/in-turn-cache'
 import { explainError as explainToolError } from '../api/agents/error-hints'
 import { budgetFromSettings } from '../api/agents/budget'
 import { finalStripThinkingTags } from '../lib/thinking-stripper'
+import { ollamaUrl, localFetchStream } from '../api/backend'
 
 const CODEX_SYSTEM_PROMPT = `You are Codex, an autonomous coding agent inside Locally Uncensored. You execute coding tasks end-to-end by reading files, writing code, and running shell commands. You MUST use tools — never guess file contents.
 
@@ -46,6 +48,131 @@ Rules:
 - If a command fails, diagnose and retry with a different approach — don't hand back to the user unless truly stuck
 - Be concise in text. All the work happens in tool calls.`
 
+// ── Streaming tool-call helper for Ollama ──────────────────────────────
+// Replaces the non-streaming chatWithTools() so the user sees live
+// content/thinking tokens while Gemma 4 generates (2+ minutes).
+async function streamWithTools(
+  modelId: string,
+  messages: ChatMessage[],
+  tools: ToolDefinition[],
+  options: { temperature?: number; thinking?: boolean; maxTokens?: number; signal?: AbortSignal },
+  onContent: (content: string) => void,
+  onThinking: (thinking: string) => void,
+): Promise<{ content: string; toolCalls: ToolCall[]; thinking: string }> {
+  const ollamaMessages = messages.map(m => {
+    const msg: Record<string, any> = { role: m.role, content: m.content }
+    if (m.tool_calls) msg.tool_calls = m.tool_calls
+    if ((m as any).images?.length) msg.images = (m as any).images.map((img: any) => img.data)
+    return msg
+  })
+
+  const body: Record<string, any> = {
+    model: modelId,
+    messages: ollamaMessages,
+    tools,
+    stream: true,
+    options: { num_gpu: 99 },
+  }
+  if (options.temperature !== undefined) body.options.temperature = options.temperature
+  if (options.maxTokens) body.options.num_predict = options.maxTokens
+  if (options.thinking === true) body.think = true
+  else if (options.thinking === false) body.think = false
+
+  const url = ollamaUrl('/chat')
+  // Use localFetchStream which tries direct fetch first, then falls back
+  // to the Tauri Rust proxy (proxy_localhost_stream). Plain `fetch` fails
+  // in the Tauri .exe because WebView can't reach localhost:11434 directly.
+  let response: Response
+  try {
+    response = await localFetchStream(url, {
+      method: 'POST',
+      body: JSON.stringify(body),
+      signal: options.signal,
+    })
+  } catch (fetchErr) {
+    throw fetchErr
+  }
+
+  // Retry without think on 400 (old Ollama builds / non-thinking models)
+  if (!response.ok && response.status === 400 && 'think' in body) {
+    delete body.think
+    response = await localFetchStream(url, {
+      method: 'POST',
+      body: JSON.stringify(body),
+      signal: options.signal,
+    })
+  }
+
+  if (!response.ok) {
+    const text = await response.text()
+    const err = new Error(`HTTP ${response.status}: ${text}`) as any
+    err.statusCode = response.status
+    throw err
+  }
+
+  const reader = response.body!.getReader()
+  const decoder = new TextDecoder()
+  let buf = ''
+  let content = ''
+  let thinking = ''
+  let toolCalls: ToolCall[] = []
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+
+    buf += decoder.decode(value, { stream: true })
+    const lines = buf.split('\n')
+    buf = lines.pop() || ''
+
+    for (const line of lines) {
+      const trimmed = line.trim()
+      if (!trimmed) continue
+      try {
+        const j = JSON.parse(trimmed)
+        if (j.message) {
+          if (j.message.content) {
+            content += j.message.content
+            onContent(content)
+          }
+          if (j.message.thinking) {
+            thinking += j.message.thinking
+            onThinking(thinking)
+          }
+          // Ollama sends tool_calls in the last chunk where done=true
+          if (j.message.tool_calls && Array.isArray(j.message.tool_calls)) {
+            toolCalls = j.message.tool_calls.map((tc: any) => ({
+              function: { name: tc.function.name, arguments: tc.function.arguments },
+            }))
+          }
+        }
+      } catch { /* partial JSON line — skip */ }
+    }
+  }
+
+  // Process any remaining buffer
+  if (buf.trim()) {
+    try {
+      const j = JSON.parse(buf.trim())
+      if (j.message?.tool_calls && Array.isArray(j.message.tool_calls)) {
+        toolCalls = j.message.tool_calls.map((tc: any) => ({
+          function: { name: tc.function.name, arguments: tc.function.arguments },
+        }))
+      }
+      if (j.message?.content) {
+        content += j.message.content
+        onContent(content)
+      }
+      if (j.message?.thinking) {
+        thinking += j.message.thinking
+        onThinking(thinking)
+      }
+    } catch { /* ignore */ }
+  }
+
+  return { content, toolCalls, thinking }
+}
+
 // Coding-relevant tool categories
 const CODEX_CATEGORIES = ['filesystem', 'terminal', 'system', 'web'] as const
 
@@ -68,6 +195,11 @@ export function useCodex() {
     if (!convId) {
       convId = store.createConversation(activeModel, persona?.systemPrompt || '', 'codex')
     }
+
+    // Per-chat agent workspace → `~/agent-workspace/<convId>/`.
+    // Cleared in the finally block so standalone tool calls elsewhere
+    // don't leak into this conversation's folder.
+    setActiveChatId(convId)
 
     // Init codex thread if needed
     if (!codexStore.getThread(convId)) {
@@ -146,14 +278,22 @@ export function useCodex() {
     let messages: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
       ...conv.messages
-        .filter(m => m.role !== 'system' && m.content.trim())
-        .map(m => ({
-          role: m.role as 'user' | 'assistant' | 'tool',
-          content: m.role === 'user' && cavemanReminder
-            ? `${cavemanReminder}\n${m.content}`
-            : m.content,
-        })),
+        .filter(m => m.role !== 'system' && (m.content.trim() || m.hidden))
+        .map(m => {
+          const msg: ChatMessage = {
+            role: m.role as 'user' | 'assistant' | 'tool',
+            content: m.role === 'user' && cavemanReminder
+              ? `${cavemanReminder}\n${m.content}`
+              : m.content,
+          }
+          // Carry over tool_calls from hidden assistant messages so the
+          // model sees the full tool-call chain from previous turns
+          // (continue capability, parity with original Codex CLI).
+          if (m.tool_calls) msg.tool_calls = m.tool_calls as any
+          return msg
+        }),
     ]
+    const messagesStartLen = messages.length
 
     // Setup
     const abort = new AbortController()
@@ -215,29 +355,61 @@ export function useCodex() {
             function: { name: t.name, description: t.description, parameters: t.inputSchema },
           }))
 
-          let turn: { content: string; toolCalls: ToolCall[] }
-          try {
-            turn = await provider.chatWithTools(modelToUse, messages, tools, chatOptions)
-          } catch (thinkErr: any) {
-            if (thinkErr?.message?.includes('does not support thinking') || thinkErr?.statusCode === 400) {
-              // Retry with `undefined` so the provider omits the think
-              // field entirely (old Ollama builds reject both `think: true`
-              // and `think: false`).
-              turn = await provider.chatWithTools(modelToUse, messages, tools, { ...chatOptions, thinking: undefined as unknown as boolean })
-            } else {
-              throw thinkErr
-            }
-          }
-
-          toolCalls = turn.toolCalls
-          turnContent = turn.content || ''
-          // Codex parity with Agent / Chat: Thinking visibility is driven
-          // by the toggle. Native Ollama `thinking` field is only surfaced
-          // when the user asked for it. Drop it silently otherwise.
           const keepThinking = settings.thinkingEnabled === true && isThinkingCompatible(activeModel)
-          if (keepThinking && (turn as any).thinking) {
-            thinkingContent += (thinkingContent ? '\n\n' : '') + (turn as any).thinking
-            useChatStore.getState().updateMessageThinking(convId!, assistantMsg.id, thinkingContent)
+
+          if (providerId === 'ollama') {
+            // ── Streaming path for Ollama ──────────────────────────────
+            // Shows live content/thinking tokens so the user isn't staring
+            // at an empty bubble for 2+ minutes while the model generates.
+            let turn: { content: string; toolCalls: ToolCall[]; thinking: string }
+            try {
+              turn = await streamWithTools(
+                modelToUse, messages, tools,
+                { temperature: 0.1, thinking: chatOptions.thinking, maxTokens: chatOptions.maxTokens, signal: abort.signal },
+                (c) => useChatStore.getState().updateMessageContent(convId!, assistantMsg.id, fullContent ? fullContent + '\n\n' + c : c),
+                (t) => {
+                  if (keepThinking) {
+                    const combined = thinkingContent ? thinkingContent + '\n\n' + t : t
+                    useChatStore.getState().updateMessageThinking(convId!, assistantMsg.id, combined)
+                  }
+                },
+              )
+            } catch (thinkErr: any) {
+              if (thinkErr?.statusCode === 400 || thinkErr?.message?.includes('does not support thinking')) {
+                turn = await streamWithTools(
+                  modelToUse, messages, tools,
+                  { temperature: 0.1, thinking: undefined, maxTokens: chatOptions.maxTokens, signal: abort.signal },
+                  (c) => useChatStore.getState().updateMessageContent(convId!, assistantMsg.id, fullContent ? fullContent + '\n\n' + c : c),
+                  () => {},
+                )
+              } else {
+                throw thinkErr
+              }
+            }
+            toolCalls = turn.toolCalls
+            turnContent = turn.content || ''
+            if (keepThinking && turn.thinking) {
+              thinkingContent += (thinkingContent ? '\n\n' : '') + turn.thinking
+              useChatStore.getState().updateMessageThinking(convId!, assistantMsg.id, thinkingContent)
+            }
+          } else {
+            // ── Non-streaming fallback for OpenAI/Anthropic providers ──
+            let turn: { content: string; toolCalls: ToolCall[] }
+            try {
+              turn = await provider.chatWithTools(modelToUse, messages, tools, chatOptions)
+            } catch (thinkErr: any) {
+              if (thinkErr?.message?.includes('does not support thinking') || thinkErr?.statusCode === 400) {
+                turn = await provider.chatWithTools(modelToUse, messages, tools, { ...chatOptions, thinking: undefined as unknown as boolean })
+              } else {
+                throw thinkErr
+              }
+            }
+            toolCalls = turn.toolCalls
+            turnContent = turn.content || ''
+            if (keepThinking && (turn as any).thinking) {
+              thinkingContent += (thinkingContent ? '\n\n' : '') + (turn as any).thinking
+              useChatStore.getState().updateMessageThinking(convId!, assistantMsg.id, thinkingContent)
+            }
           }
         } else {
           const hermesTools = toolRegistry.toHermesToolDefs(permissions)
@@ -302,10 +474,21 @@ export function useCodex() {
             if (hasValidWorkDir) toolArgs.cwd = workDir
             if (!toolArgs.timeout) toolArgs.timeout = 30000
           }
-          // Resolve relative file paths against working directory
+          // Resolve relative file paths against working directory.
+          // Absolute-path detection must accept ANY drive letter (C:, D:, E:, …),
+          // not just C:. Previously `!p.startsWith('C:')` classified
+          // `D:/Pictures/foo/bar.html` as relative and prepended workDir,
+          // producing the "doubled path" bug:
+          //   workDir=D:/Pictures/foo, p=D:/Pictures/foo/bar.html →
+          //   D:/Pictures/foo/D:/Pictures/foo/bar.html
+          // which then grew further on retry as the model re-emitted the path.
           if ((toolName === 'file_read' || toolName === 'file_write' || toolName === 'file_list' || toolName === 'file_search') && toolArgs.path) {
-            const p = toolArgs.path
-            if (!p.startsWith('/') && !p.startsWith('C:') && !p.startsWith('\\\\') && workDir) {
+            const p: string = toolArgs.path
+            const isAbsolute =
+              /^[a-zA-Z]:[/\\]/.test(p) ||  // Windows drive letter: C:/ D:\ etc.
+              p.startsWith('/') ||          // Unix absolute
+              p.startsWith('\\\\')          // UNC path: \\server\share
+            if (!isAbsolute && workDir) {
               toolArgs.path = workDir.replace(/\\/g, '/') + '/' + p
             }
           }
@@ -451,6 +634,28 @@ export function useCodex() {
         }
       }
 
+      // Bug fix: when the model's final turn returns empty content (all
+      // work happened via tool calls), build a fallback summary from the
+      // blocks array so the assistant bubble is never blank.
+      if (!fullContent.trim()) {
+        const completed = blocks.filter(b => b.phase === 'tool_call' && b.toolCall?.status === 'completed')
+        const failed = blocks.filter(b => b.phase === 'tool_call' && b.toolCall?.status === 'failed')
+        const writes = completed.filter(b => b.toolCall?.toolName === 'file_write')
+        const reads = completed.filter(b => b.toolCall?.toolName === 'file_read')
+
+        const parts: string[] = []
+        if (writes.length) parts.push(`${writes.length} file(s) written`)
+        if (reads.length) parts.push(`${reads.length} file(s) read`)
+        const otherCompleted = completed.length - writes.length - reads.length
+        if (otherCompleted > 0) parts.push(`${otherCompleted} other operation(s) completed`)
+        if (failed.length) parts.push(`${failed.length} operation(s) failed`)
+
+        fullContent = parts.length > 0
+          ? `Task completed: ${parts.join(', ')}.`
+          : 'Task completed.'
+        useChatStore.getState().updateMessageContent(convId, assistantMsg.id, fullContent)
+      }
+
       // Final update
       codexStore.addEvent(convId, {
         id: uuid(), type: 'done', content: 'Task completed.', timestamp: Date.now(),
@@ -482,9 +687,35 @@ export function useCodex() {
         })
       }
     } finally {
+      // ── Continue capability (parity with original Codex CLI) ────────
+      // Persist the tool-call chain from this turn as hidden messages in
+      // the chat store. On the next turn, the history builder includes
+      // them in the API payload so the model sees what it did before.
+      // Hidden messages are filtered out by MessageBubble rendering.
+      const toolHistory = messages.slice(messagesStartLen)
+      if (toolHistory.length > 0 && convId) {
+        const store = useChatStore.getState()
+        // Find the assistant message we just filled so we can insert BEFORE it
+        const convNow = store.conversations.find(c => c.id === convId)
+        const assistantIdx = convNow?.messages.findIndex(m => m.id === assistantMsg.id) ?? -1
+        if (assistantIdx > 0) {
+          for (const tm of toolHistory) {
+            store.insertMessageBefore(convId, assistantMsg.id, {
+              id: uuid(),
+              role: tm.role as 'assistant' | 'tool',
+              content: tm.content || '',
+              timestamp: Date.now(),
+              hidden: true,
+              tool_calls: tm.tool_calls as any,
+            })
+          }
+        }
+      }
+
       setIsRunning(false)
       runningRef.current = false
       abortRef.current = null
+      clearActiveChatId()
       codexStore.setThreadStatus(convId, 'idle')
     }
   }, [])
