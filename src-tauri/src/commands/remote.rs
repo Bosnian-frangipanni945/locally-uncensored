@@ -3303,7 +3303,7 @@ pub async fn start_remote_server(
     app: AppHandle,
     state: tauri::State<'_, crate::state::AppState>,
     model: Option<String>,
-    systemPrompt: Option<String>,
+    system_prompt: Option<String>,
 ) -> Result<serde_json::Value, String> {
     // Clone Arcs from std::sync::Mutex, then drop it before any .await
     let (jwt_secret_arc, passcode_arc, permissions_arc, devices_arc, tunnel_url_arc, dispatched_model_arc, dispatched_system_prompt_arc, port, comfy_port) = {
@@ -3352,14 +3352,14 @@ pub async fn start_remote_server(
         let mut devices = devices_arc.lock().await;
         devices.clear();
     }
-    // Store dispatched model/systemPrompt
+    // Store dispatched model/system_prompt
     {
         let mut dm = dispatched_model_arc.lock().await;
         *dm = model.unwrap_or_default();
     }
     {
         let mut dsp = dispatched_system_prompt_arc.lock().await;
-        *dsp = systemPrompt.unwrap_or_default();
+        *dsp = system_prompt.unwrap_or_default();
     }
 
     let server_state = RemoteState {
@@ -3430,7 +3430,7 @@ pub async fn restart_remote_server(
     app: AppHandle,
     state: tauri::State<'_, crate::state::AppState>,
     model: Option<String>,
-    systemPrompt: Option<String>,
+    system_prompt: Option<String>,
 ) -> Result<serde_json::Value, String> {
     use tauri::Manager;
     // Stop first (ignore errors if not running)
@@ -3439,7 +3439,7 @@ pub async fn restart_remote_server(
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     // Start fresh with a re-acquired State handle from the AppHandle
     let state2 = app.state::<crate::state::AppState>();
-    start_remote_server(app.clone(), state2, model, systemPrompt).await
+    start_remote_server(app.clone(), state2, model, system_prompt).await
 }
 
 #[tauri::command]

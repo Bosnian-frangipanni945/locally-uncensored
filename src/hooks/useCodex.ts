@@ -139,11 +139,11 @@ async function streamWithTools(
             thinking += j.message.thinking
             onThinking(thinking)
           }
-          // Ollama sends tool_calls in the last chunk where done=true
+          // Ollama may split tool_calls across chunks — append, don't overwrite
           if (j.message.tool_calls && Array.isArray(j.message.tool_calls)) {
-            toolCalls = j.message.tool_calls.map((tc: any) => ({
+            toolCalls = [...toolCalls, ...j.message.tool_calls.map((tc: any) => ({
               function: { name: tc.function.name, arguments: tc.function.arguments },
-            }))
+            }))]
           }
         }
       } catch { /* partial JSON line — skip */ }
@@ -155,9 +155,9 @@ async function streamWithTools(
     try {
       const j = JSON.parse(buf.trim())
       if (j.message?.tool_calls && Array.isArray(j.message.tool_calls)) {
-        toolCalls = j.message.tool_calls.map((tc: any) => ({
+        toolCalls = [...toolCalls, ...j.message.tool_calls.map((tc: any) => ({
           function: { name: tc.function.name, arguments: tc.function.arguments },
-        }))
+        }))]
       }
       if (j.message?.content) {
         content += j.message.content
@@ -489,7 +489,7 @@ export function useCodex() {
               p.startsWith('/') ||          // Unix absolute
               p.startsWith('\\\\')          // UNC path: \\server\share
             if (!isAbsolute && workDir) {
-              toolArgs.path = workDir.replace(/\\/g, '/') + '/' + p
+              toolArgs.path = workDir.replace(/\\/g, '/').replace(/\/$/, '') + '/' + p
             }
           }
 
