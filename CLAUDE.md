@@ -3,8 +3,8 @@
 ## Project Overview
 Plug and Play for the Mass Desktop AI app (Tauri + React + TypeScript) for local LLM chat, image and video generation via ComfyUI.
 - **Repo:** PurpleDoubleD/locally-uncensored (35+ stars)
-- **Current public version:** v2.2.3 (released 2026-04-05)
-- **Next release:** v2.3.3 on branch `feature/caveman-remote` (DO NOT PUSH until user says so — installer built + on Desktop, uncommitted changes)
+- **Current public version:** v2.3.3 (merging to master 2026-04-16)
+- **Branch:** `feature/agent-overhaul-v24` merged into master
 - Test iterations 2.3.4–2.3.7 were intermediate, not shipped. **2.3.3 is the next public version.**
 
 ## Tech Stack
@@ -160,6 +160,20 @@ src-tauri/src/commands/      — Rust commands: install, process, download, prox
 
 88. **Mobile Codex AUTONOMY CONTRACT (commit 80598ea)** — Mobile `CODEX_PROMPT` now matches desktop's system prompt with explicit autonomy contract: "NEVER say 'Now I will create X' and then stop — execute ALL N steps in one session."
 
+89. **Tool-call overwrite bug fix (commit 9aaa7d6)** — `streamWithTools()` NDJSON parser was overwriting tool_calls instead of appending across chunks. Silent data loss when Ollama split tool calls. Fixed: spread-append `[...toolCalls, ...new]`. Also: Rust snake_case warnings fixed (`systemPrompt` → `system_prompt`), FLUX2 CFG test corrected (3.5 not 1.0), flaky timing tests relaxed (90ms→200ms).
+
+90. **Comprehensive smoke test suite (commit 11a47e4)** — 186 new tests (1919→2105 total) across 9 new test files: `useCodex-streaming` (NDJSON parsing, tool append regression), `useCodex-fallback-answer`, `useCodex-prompt-contract` (AUTONOMY CONTRACT desktop↔mobile parity), `chatStore-operations` (all CRUD + insertMessageBefore + hidden messages), `model-compatibility-smoke` (agent/thinking/planner/claude-code), `ernie-image-workflow` (classification→strategy→bundles→ConditioningZeroOut), `app-wide-smoke` (defaults, registries, bundle→strategy pipeline), `mobile-codex-parity` (tools, loop, permissions), `message-types` (hidden, tool_calls, all roles/modes).
+
+91. **Codex streaming arg repair (commit 1f6d49b)** — `repairToolCallArgs()` was missing in the NDJSON streaming path. Ollama returns tool arguments as JSON strings (not objects) during streaming → args-validator saw string → "path is missing". Non-streaming path in ollama-provider.ts had the repair, streaming path didn't. Fixed: import + apply `repairToolCallArgs()` at both extraction points.
+
+92. **Agent filesystem awareness (commit 1f6d49b)** — Agent system prompt in `useAgentChat.ts` was web-only ("web_search → web_fetch → answer"), making the agent "PC blind" for filesystem tasks. Rewrote `buildAgentSystemPrompt()` with full tool inventory (filesystem, web, system, creative), exploration-first workflow guidance, and `system_info` hint.
+
+93. **AE-style text header (commit ee3a20a)** — Header right section redesigned from icon pills to After Effects typography: Chat, Create, Compare, Benchmark, Models, Settings as clean `text-[0.6rem] font-medium` text labels matching sidebar tab size. Downloads + Light/Dark kept as icons. Improves discoverability (#23 root cause).
+
+94. **Qwen 3.6 day-0 integration (commit ca93252)** — Qwen 3.6 (35B MoE, 3B active, vision + agentic coding + thinking preservation, 256K context) released on Ollama. Added to: `AGENT_COMPATIBLE`, `THINKING_COMPATIBLE`, `CLAUDE_CODE_COMPATIBLE`, recommended models (#1 HOT pick), Discover mainstream list, mobile `THINKING_COMPATIBLE`. One-click Ollama pull via new `ollamaModel` field on `DiscoverModel`.
+
+95. **UI polish (commit 0a82260)** — Sidebar "Soon" tag now replaces label text (was floating above). Downloads + Light/Dark restored to icons. Header nav text matched to sidebar tabs (`text-[0.6rem]`). Qwen 3.6 download button works via `ollamaModel` → `pullModel()` in `handleTextDownload`.
+
 ### What's LEFT to finish v2.3.0:
 1. **Tauri proxy_localhost investigation** — reqwest in Tauri subprocess can't reach localhost. Direct fetch workaround now also primary path for streaming via #79a. Root cause still unknown. Low priority.
 2. **LTX VAEDecode reference** — dynamic-workflow.ts line 263: vaeSourceId incorrectly points to UNETLoader output for LTX strategy. Fix when LTX model is installed for testing.
@@ -274,6 +288,6 @@ src-tauri/src/commands/      — Rust commands: install, process, download, prox
 - Downloads: Use `downloadStore` for all ComfyUI downloads (not component-local state)
 
 
-## Test Suite: 1918 tests (74 test files, as of v24 + ERNIE-Image + Codex fixes)
+## Test Suite: 2105 tests (83 test files, as of v2.3.3 final)
 All pre-existing test failures have been fixed. Run `npx vitest run` to verify.
 Also run `cargo check --manifest-path src-tauri/Cargo.toml` for Rust changes and `npx tsc --noEmit` for TS type check.
